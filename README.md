@@ -4,16 +4,29 @@ Chrome extension that shows **CS2 map play and win rates** for your team and the
 
 No developer API key. The extension reads the same Faceit data the website already shows, using your logged-in Faceit session.
 
-## Setup
+## Install
+
+The extension is not on the Chrome Web Store, so it is loaded unpacked. Either download a prebuilt release or build it yourself — both end at the same **Load unpacked** step.
+
+### From a release
+
+1. Open the [Releases](../../releases) page and download `face-it-numbers-<version>.zip` from the latest release.
+2. Unzip it. You get a single `face-it-numbers` folder — put it somewhere you intend to keep, e.g. `~/extensions/face-it-numbers`. Chrome loads an unpacked extension from that folder every time it starts, so deleting or moving it uninstalls the extension.
+3. Open `chrome://extensions` and turn on **Developer mode** (top right).
+4. Click **Load unpacked** and select the `face-it-numbers` folder — the one containing `manifest.json`, not the zip itself.
+5. Sign in to [faceit.com](https://www.faceit.com/) in the same Chrome profile.
+6. Open a CS2 match room (`faceit.com/.../cs2/room/...`).
+
+To update, download the newer zip and unzip it over the same location, replacing the `face-it-numbers` folder, then click the reload icon on the extension's card in `chrome://extensions`. The folder name carries no version, so the path stays the same and your settings survive the update — Chrome derives an unpacked extension's identity from where it lives.
+
+### From source
 
 ```bash
 npm install
 npm run build
 ```
 
-1. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder.
-2. Sign in to [faceit.com](https://www.faceit.com/) in Chrome.
-3. Open a CS2 match room (`faceit.com/.../cs2/room/...`).
+Then follow steps 3–6 above, selecting the generated `dist` folder.
 
 For local development, `npm run dev` rebuilds into `dist` as you edit. Reload the extension after the first build, then reload the Faceit tab.
 
@@ -25,6 +38,17 @@ When the lobby has players:
 - Compact `You … | Them …` chips are injected onto the veto map cards when that UI is visible.
 - Use **Swap teams** if your nickname was not detected and the sides are reversed.
 - Click a map in the chart for a per-player breakdown.
+
+## Releasing
+
+Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). Pushing a `v*` tag builds the extension, packages `dist` as `face-it-numbers-<version>.zip` (wrapping it in a `face-it-numbers/` folder so it unzips ready to load), and publishes a GitHub release with that zip attached and generated notes:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+The tag is the single source of truth for the version: the workflow stamps it into `package.json`, and `manifest.config.ts` reads the version from there, so `manifest.json` matches the release. A prerelease tag such as `v1.1.0-rc.1` is marked as a prerelease and ships as `1.1.0` in the manifest, since Chrome only accepts numeric version parts. The workflow can also be started from the Actions tab via **Run workflow**, which creates the tag if it does not exist.
 
 ## Privacy
 
