@@ -79,7 +79,16 @@ jobs:
         run: |
           set -euo pipefail
           ZIP="face-it-numbers-$VERSION.zip"
-          (cd dist && zip -r -q "../$ZIP" .)
+          ZIP_PATH="$PWD/$ZIP"
+          # Wrap the build in a folder so unzipping yields one directory to point
+          # "Load unpacked" at, instead of scattering the build across the download
+          # folder. The folder name is deliberately unversioned: Chrome derives an
+          # unpacked extension's ID from its path, so a stable path lets an update
+          # unzip over the old install and keep the user's settings.
+          STAGE="$(mktemp -d)"
+          cp -r dist "$STAGE/face-it-numbers"
+          (cd "$STAGE" && zip -r -q "$ZIP_PATH" face-it-numbers)
+          rm -rf "$STAGE"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           unzip -l "$ZIP"
 
