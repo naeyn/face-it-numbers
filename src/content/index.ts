@@ -1,4 +1,6 @@
 import type { ExtensionMessage, LobbyStats, LobbyStatsResponse } from "../lib/types";
+import { votingOpen } from "../lib/briefing";
+import { LOBBY_POLL_MS, VOTE_POLL_MS } from "../lib/constants";
 import { extensionAlive, isContextInvalidated } from "../lib/extension";
 import { absorbSmart } from "../lib/calibration";
 import { SETTINGS_KEY, loadSettings } from "../lib/settings";
@@ -16,7 +18,6 @@ import {
   observePlayerLabels,
 } from "./player-labels";
 
-const POLL_MS = 8000;
 const URL_CHECK_MS = 500;
 
 let overlay: Overlay | undefined;
@@ -106,6 +107,21 @@ async function refresh(): Promise<void> {
   }
 }
 
+function pollDelay(): number {
+  return votingOpen(latestStats) ? VOTE_POLL_MS : LOBBY_POLL_MS;
+}
+
+function schedulePoll(): void {
+  if (halted || !currentMatchId) return;
+  if (pollTimer != null) window.clearTimeout(pollTimer);
+  pollTimer = window.setTimeout(() => {
+    pollTimer = undefined;
+    void refresh().finally(() => {
+      schedulePoll();
+    });
+  }, pollDelay());
+}
+
 function startMatch(matchId: string): void {
   if (halted || currentMatchId === matchId) return;
   stopMatch();
@@ -118,19 +134,20 @@ function startMatch(matchId: string): void {
       latestStats = stats;
       overlay?.render(stats);
     },
+    () => {
+      void refresh();
+    },
   );
   labelObserver = observePlayerLabels(() => latestStats);
   void refresh();
-  pollTimer = window.setInterval(() => {
-    void refresh();
-  }, POLL_MS);
+  schedulePoll();
 }
 
 function stopMatch(): void {
   currentMatchId = undefined;
   latestStats = undefined;
   if (pollTimer != null) {
-    window.clearInterval(pollTimer);
+    window.clearTimeout(pollTimer);
     pollTimer = undefined;
   }
   cardObserver?.disconnect();

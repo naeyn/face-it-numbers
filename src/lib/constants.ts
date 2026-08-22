@@ -1,6 +1,9 @@
 export const SAMPLE_LIMIT = 30;
 export const CACHE_TTL_MS = 15 * 60 * 1000;
 export const FETCH_CONCURRENCY = 3;
+export const PLAYER_FETCH_CONCURRENCY = 5;
+export const LOBBY_POLL_MS = 8000;
+export const VOTE_POLL_MS = 1800;
 export const FACEIT_API_BASE = "https://api.faceit.com";
 export const FACEIT_SITE_API_BASE = "https://www.faceit.com/api";
 export const THIN_MEAN_GAMES = 5;

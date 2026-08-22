@@ -80,6 +80,12 @@ export function vetoComplete(stats: LobbyStats): boolean {
   return /ready|ongoing|subst|live|finish/.test(status);
 }
 
+export function votingOpen(stats: LobbyStats | undefined): boolean {
+  if (!stats) return true;
+  if (pickedMapKeys(stats).length > 0) return false;
+  return !vetoComplete(stats);
+}
+
 function gamesFor(
   stats: LobbyStats,
   playerId: string,
