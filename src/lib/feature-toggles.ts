@@ -6,6 +6,7 @@ import {
   type FeatureSettings,
 } from "./settings";
 import { COLOR_PRESETS } from "./team-colors";
+import { mountVersion } from "./version";
 
 function persist(settings: FeatureSettings): void {
   void saveSettings(settings);
@@ -105,6 +106,7 @@ export async function mountFeatureToggles(root: HTMLElement): Promise<void> {
   }
 
   mountColorPickers(root, settings);
+  mountVersion(root);
 
   root.addEventListener("change", (event) => {
     const target = event.target;

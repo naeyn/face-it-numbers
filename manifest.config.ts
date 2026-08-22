@@ -1,11 +1,12 @@
 import { defineManifest } from "@crxjs/vite-plugin";
+import { version } from "./package.json";
 
 export default defineManifest({
   manifest_version: 3,
   name: "Faceit Numbers",
   description:
     "CS2 map play and win rates for your team and enemies during Faceit lobby veto",
-  version: "1.0.0",
+  version,
   permissions: ["storage", "cookies"],
   host_permissions: [
     "https://www.faceit.com/*",

@@ -126,3 +126,10 @@ h2 {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.version {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}

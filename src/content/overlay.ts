@@ -31,6 +31,7 @@ import type { LobbyStats, PlayerMapStat, TeamInsight, TeamMapStat } from "../lib
 import { formatChip, renderChart, type ChartRow } from "./chart";
 import { overlayStyles } from "./overlay-styles";
 import { applyTeamColors, teamPalette } from "../lib/team-colors";
+import { extensionVersion } from "../lib/version";
 
 const HOST_ID = "faceit-numbers-overlay";
 const POS_KEY = "finOverlayPos";
@@ -407,7 +408,7 @@ export class Overlay {
 
     const status = document.createElement("div");
     status.className = "status";
-    status.textContent = `${stats.status || "lobby"} · extras in the toolbar menu`;
+    status.textContent = `${stats.status || "lobby"} · extras in the toolbar menu · v${extensionVersion()}`;
     this.body.append(status);
   }
 
