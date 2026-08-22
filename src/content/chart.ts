@@ -1,6 +1,13 @@
 import { shortLabel } from "../lib/maps";
 import { isThin, type ChartBadge } from "../lib/insights";
 import { displayWinRate, pickAdvantage } from "../lib/scoring";
+import {
+  DEFAULT_THEM_COLOR,
+  DEFAULT_YOU_COLOR,
+  hexAlpha,
+  teamPalette,
+  type TeamPalette,
+} from "../lib/team-colors";
 import type { TeamMapStat } from "../lib/types";
 
 export type ChartRow = {
@@ -45,10 +52,13 @@ function wrInBar(
   group.append(text);
 }
 
-function badgeLabel(badge: ChartBadge): { text: string; fill: string } | undefined {
+function badgeLabel(
+  badge: ChartBadge,
+  colors: TeamPalette,
+): { text: string; fill: string } | undefined {
   if (badge === "ban") return { text: "BAN", fill: "#e07070" };
-  if (badge === "perm-you") return { text: "PERM", fill: "#ff5500" };
-  if (badge === "perm-them") return { text: "THEIRS", fill: "#3d8bfd" };
+  if (badge === "perm-you") return { text: "PERM", fill: colors.you };
+  if (badge === "perm-them") return { text: "THEIRS", fill: colors.them };
   return undefined;
 }
 
@@ -57,6 +67,7 @@ export function renderChart(
   selectedMap: string | undefined,
   onSelect: (mapKey: string) => void,
   adjust = false,
+  colors: TeamPalette = teamPalette(DEFAULT_YOU_COLOR, DEFAULT_THEM_COLOR),
 ): SVGSVGElement {
   const width = 380;
   const height = 228;
@@ -112,12 +123,12 @@ export function renderChart(
       bg.setAttribute("y", "4");
       bg.setAttribute("width", String(groupW - 4));
       bg.setAttribute("height", String(plotH + padTop + 12));
-      bg.setAttribute("fill", selected ? "rgba(255,85,0,0.12)" : "rgba(255,255,255,0.04)");
+      bg.setAttribute("fill", selected ? hexAlpha(colors.you, 0.12) : "rgba(255,255,255,0.04)");
       bg.setAttribute("rx", "4");
       group.append(bg);
     }
 
-    const meta = row.badge ? badgeLabel(row.badge) : undefined;
+    const meta = row.badge ? badgeLabel(row.badge, colors) : undefined;
     if (meta) {
       const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
       tag.setAttribute("x", String(cx));
@@ -136,7 +147,7 @@ export function renderChart(
     youBar.setAttribute("y", String(padTop + plotH - youH));
     youBar.setAttribute("width", String(barW));
     youBar.setAttribute("height", String(youH));
-    youBar.setAttribute("fill", "#ff5500");
+    youBar.setAttribute("fill", colors.you);
     youBar.setAttribute("rx", "2");
     if (!row.dropped && isThin(row.you)) youBar.setAttribute("opacity", "0.4");
     group.append(youBar);
@@ -146,7 +157,7 @@ export function renderChart(
     themBar.setAttribute("y", String(padTop + plotH - themH));
     themBar.setAttribute("width", String(barW));
     themBar.setAttribute("height", String(themH));
-    themBar.setAttribute("fill", "#3d8bfd");
+    themBar.setAttribute("fill", colors.them);
     themBar.setAttribute("rx", "2");
     if (!row.dropped && isThin(row.them)) themBar.setAttribute("opacity", "0.4");
     group.append(themBar);

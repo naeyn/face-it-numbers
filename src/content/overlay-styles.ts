@@ -2,6 +2,10 @@ const OVERLAY_STYLES = `
 :host {
   all: initial;
   font-family: Segoe UI, system-ui, sans-serif;
+  --fin-you: #3d8bfd;
+  --fin-them: #ff5500;
+  --fin-you-soft: #9ec1ff;
+  --fin-them-soft: #ffb086;
 }
 
 .panel {
@@ -101,8 +105,8 @@ button.on {
   text-transform: uppercase;
 }
 
-.side.you .who { color: #ff5500; }
-.side.them .who { color: #3d8bfd; }
+.side.you .who { color: var(--fin-you); }
+.side.them .who { color: var(--fin-them); }
 
 .side .stat {
   font-size: 11px;
@@ -117,8 +121,8 @@ button.on {
   font-weight: 700;
 }
 
-.side.you .stat b { color: #ffb086; }
-.side.them .stat b { color: #9ec1ff; }
+.side.you .stat b { color: var(--fin-you-soft); }
+.side.them .stat b { color: var(--fin-them-soft); }
 
 .side .stat .delta {
   font-weight: 700;
@@ -319,8 +323,8 @@ button.on {
   font-weight: 800;
 }
 
-.brief-edge.you { color: #ffb086; }
-.brief-edge.them { color: #9ec1ff; }
+.brief-edge.you { color: var(--fin-you-soft); }
+.brief-edge.them { color: var(--fin-them-soft); }
 .brief-edge.even { color: #d8d8d8; }
 
 .brief-gap {

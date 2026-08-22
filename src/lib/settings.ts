@@ -1,4 +1,9 @@
 import { extensionAlive, isContextInvalidated } from "./extension";
+import {
+  DEFAULT_THEM_COLOR,
+  DEFAULT_YOU_COLOR,
+  normalizeHex,
+} from "./team-colors";
 
 export const SETTINGS_KEY = "finSettings";
 export const LEGACY_PREFS_KEY = "finViewPrefs";
@@ -19,7 +24,10 @@ export type FeatureKey =
   | "preBrief"
   | "smartPick";
 
-export type FeatureSettings = Record<FeatureKey, boolean>;
+export type FeatureSettings = Record<FeatureKey, boolean> & {
+  youColor: string;
+  themColor: string;
+};
 
 export const DEFAULT_SETTINGS: FeatureSettings = {
   sortBest: true,
@@ -36,6 +44,8 @@ export const DEFAULT_SETTINGS: FeatureSettings = {
   gameLabels: true,
   preBrief: true,
   smartPick: true,
+  youColor: DEFAULT_YOU_COLOR,
+  themColor: DEFAULT_THEM_COLOR,
 };
 
 export const FEATURE_GROUPS: {
@@ -97,6 +107,8 @@ export function mergeSettings(raw: unknown): FeatureSettings {
   for (const key of Object.keys(DEFAULT_SETTINGS) as FeatureKey[]) {
     if (typeof record[key] === "boolean") base[key] = record[key];
   }
+  base.youColor = normalizeHex(record.youColor, DEFAULT_YOU_COLOR);
+  base.themColor = normalizeHex(record.themColor, DEFAULT_THEM_COLOR);
   return base;
 }
 

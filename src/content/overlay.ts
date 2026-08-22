@@ -30,6 +30,7 @@ import { smartAdvantage } from "../lib/calibration";
 import type { LobbyStats, PlayerMapStat, TeamInsight, TeamMapStat } from "../lib/types";
 import { formatChip, renderChart, type ChartRow } from "./chart";
 import { overlayStyles } from "./overlay-styles";
+import { applyTeamColors, teamPalette } from "../lib/team-colors";
 
 const HOST_ID = "faceit-numbers-overlay";
 const POS_KEY = "finOverlayPos";
@@ -99,6 +100,7 @@ export class Overlay {
     this.panel.append(this.header, this.body);
     this.root.append(style, this.panel, this.tip);
     document.documentElement.append(this.host);
+    applyTeamColors(this.host, this.settings.youColor, this.settings.themColor);
 
     this.panel.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest("button");
@@ -155,6 +157,7 @@ export class Overlay {
 
   setSettings(settings: FeatureSettings): void {
     this.settings = settings;
+    applyTeamColors(this.host, settings.youColor, settings.themColor);
   }
 
   showNeedLogin(): void {
@@ -312,8 +315,8 @@ export class Overlay {
     const keys = document.createElement("div");
     keys.className = "keys";
     keys.innerHTML = `
-      <span><i class="swatch" style="background:#ff5500"></i>You</span>
-      <span><i class="swatch" style="background:#3d8bfd"></i>Them</span>
+      <span><i class="swatch" style="background:${this.settings.youColor}"></i>You</span>
+      <span><i class="swatch" style="background:${this.settings.themColor}"></i>Them</span>
     `;
     const toggles = document.createElement("div");
     toggles.className = "toggles";
@@ -346,6 +349,7 @@ export class Overlay {
         this.render(stats);
       },
       this.settings.adjust,
+      teamPalette(this.settings.youColor, this.settings.themColor),
     );
     chartMount.append(svg);
     this.body.append(chartMount);
@@ -768,6 +772,7 @@ export class Overlay {
     this.toggling = true;
     const next = { ...this.settings, [key]: !this.settings[key] };
     this.settings = next;
+    applyTeamColors(this.host, next.youColor, next.themColor);
     this.paintKey = "";
     if (this.latestStats) this.render(this.latestStats);
     try {
@@ -785,6 +790,7 @@ export class Overlay {
       if (pos?.left) this.panel.style.left = pos.left;
       if (pos?.top) this.panel.style.top = pos.top;
       this.settings = await loadSettings();
+      applyTeamColors(this.host, this.settings.youColor, this.settings.themColor);
       if (this.latestStats) this.render(this.latestStats);
     } catch (error) {
       if (!isContextInvalidated(error)) throw error;
