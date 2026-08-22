@@ -13,9 +13,11 @@ import {
   CACHE_TTL_MS,
   FETCH_CONCURRENCY,
   LABEL_HISTORY_PAGES,
+  PLAYER_FETCH_CONCURRENCY,
   SAMPLE_LIMIT,
 } from "./lib/constants";
 import { FaceitApiError, faceitGet, mapPool } from "./lib/faceit-api";
+import { nicknameFromPayload, nicknameFromToken } from "./lib/session-user";
 import {
   DEFAULT_CS2_POOL,
   KNOWN_MAPS,
@@ -44,6 +46,7 @@ type CacheEntry = {
 
 const playerCache = new Map<string, CacheEntry>();
 const histCache = new Map<string, CacheEntry>();
+let sessionNickCache: { token: string; nick: string; at: number } | undefined;
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, _sender, sendResponse) => {
@@ -99,12 +102,10 @@ async function getLobbyStats(
   pageToken: string | undefined,
 ): Promise<LobbyStatsResponse> {
   const token = await resolveToken(pageToken);
-  let sessionNickname = myNickname;
-  if (token && !sessionNickname) {
-    sessionNickname = await fetchSessionNickname(token);
-  }
-
-  const match = await fetchMatch(matchId, token);
+  const [match, tokenNickname] = await Promise.all([
+    fetchMatch(matchId, token),
+    resolveSessionNickname(token),
+  ]);
   const faction1 = match.teams?.faction1?.roster ?? [];
   const faction2 = match.teams?.faction2?.roster ?? [];
   const pool = resolvePool(match);
@@ -116,6 +117,7 @@ async function getLobbyStats(
   );
 
   const roster = [...faction1, ...faction2];
+  const sessionNickname = pickRosterNickname(tokenNickname, myNickname, faction1, faction2);
   const myFaction = resolveMyFaction(
     faction1,
     faction2,
@@ -225,12 +227,40 @@ async function getLobbyStats(
   return { ok: true, data };
 }
 
+async function resolveSessionNickname(token: string | undefined): Promise<string | undefined> {
+  if (!token) return undefined;
+  const fromJwt = nicknameFromToken(token);
+  if (fromJwt) return fromJwt;
+  if (
+    sessionNickCache &&
+    sessionNickCache.token === token &&
+    Date.now() - sessionNickCache.at < CACHE_TTL_MS
+  ) {
+    return sessionNickCache.nick;
+  }
+  const nick = await fetchSessionNickname(token);
+  if (nick) sessionNickCache = { token, nick, at: Date.now() };
+  return nick;
+}
+
+function pickRosterNickname(
+  session: string | undefined,
+  hint: string | undefined,
+  faction1: RosterPlayer[],
+  faction2: RosterPlayer[],
+): string | undefined {
+  if (session && (rosterHas(faction1, session) || rosterHas(faction2, session))) {
+    return session;
+  }
+  if (hint && (rosterHas(faction1, hint) || rosterHas(faction2, hint))) {
+    return hint;
+  }
+  return session ?? hint;
+}
+
 async function fetchSessionNickname(token: string): Promise<string | undefined> {
   try {
-    const me = await faceitGet("/users/v1/sessions/me", token);
-    const record = asRecord(me);
-    const nick = record?.nickname;
-    return typeof nick === "string" ? nick : undefined;
+    return nicknameFromPayload(await faceitGet("/users/v1/sessions/me", token));
   } catch {
     return undefined;
   }
@@ -526,7 +556,7 @@ async function loadPlayerStats(
 
   const parsed = await mapPool(
     [...unique.values()],
-    FETCH_CONCURRENCY,
+    PLAYER_FETCH_CONCURRENCY,
     async (player) => ({
       playerId: player.player_id,
       history: await statsForPlayer(player, pool, token, now),

@@ -1,3 +1,5 @@
+import { nicknameFromToken } from "../lib/session-user";
+
 const SKIP_NICKS = new Set([
   "search",
   "hubs",
@@ -65,21 +67,7 @@ export function getFaceitToken(): string | undefined {
 }
 
 export function detectMyNickname(): string | undefined {
-  const fromHeader = headerNickname();
-  if (fromHeader) return fromHeader;
-
-  const all = nicknamesFrom(document);
-  if (all.length === 0) return undefined;
-
-  const counts = new Map<string, number>();
-  for (const nick of all) {
-    const key = nick.toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-
-  // Header/profile links usually appear once; lobby roster nicknames repeat.
-  const unique = all.find((nick) => (counts.get(nick.toLowerCase()) ?? 0) === 1);
-  return unique ?? all[0];
+  return nicknameFromToken(getFaceitToken()) ?? headerNickname();
 }
 
 export function getMatchIdFromUrl(url = location.href): string | undefined {
