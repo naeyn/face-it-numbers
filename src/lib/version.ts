@@ -1,12 +1,7 @@
-import { extensionAlive } from "./extension";
+import pkg from "../../package.json";
 
 export function extensionVersion(): string {
-  if (!extensionAlive()) return "0.0.0";
-  try {
-    return chrome.runtime.getManifest().version;
-  } catch {
-    return "0.0.0";
-  }
+  return typeof pkg.version === "string" && pkg.version ? pkg.version : "0.0.0";
 }
 
 export function mountVersion(parent: HTMLElement): void {

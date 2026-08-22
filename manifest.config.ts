@@ -1,5 +1,9 @@
 import { defineManifest } from "@crxjs/vite-plugin";
-import { version } from "./package.json";
+import pkg from "./package.json";
+
+// Chrome accepts up to four dot-separated integers, so a prerelease tag like
+// 1.1.0-rc.1 ships as 1.1.0 in the manifest while the release keeps its full name.
+const version = pkg.version.split("-")[0];
 
 export default defineManifest({
   manifest_version: 3,
