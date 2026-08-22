@@ -1,5 +1,9 @@
 import { pickedMapKeys } from "../lib/briefing";
+import { isThin } from "../lib/insights";
 import { KNOWN_MAPS, restrictLobbyMaps } from "../lib/maps";
+import { pickAdvantage } from "../lib/scoring";
+import { loadSettings } from "../lib/settings";
+import { applyTeamColors } from "../lib/team-colors";
 import type { LobbyStats, MapEntity, TeamMapStat } from "../lib/types";
 
 const CHIP_ATTR = "data-fin-map";
@@ -7,6 +11,12 @@ const HOST_ATTR = "data-fin-map-row";
 const STYLE_ID = "faceit-numbers-map-chips";
 
 const CHIP_CSS = `
+:root {
+  --fin-you: #3d8bfd;
+  --fin-them: #ff5500;
+  --fin-you-soft: #9ec1ff;
+  --fin-them-soft: #ffb086;
+}
 [data-fin-map-row] {
   position: relative !important;
   overflow: visible !important;
@@ -20,21 +30,41 @@ const CHIP_CSS = `
   align-items: center;
   gap: 5px;
   margin: 0;
-  padding: 5px 8px;
+  padding: 5px 8px 5px 10px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(8, 10, 14, 0.88);
+  box-shadow: inset 3px 0 0 #4a5160;
   color: #fff;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
   z-index: 6;
 }
-.fin-map-chip .fin-you { color: #ffb086; }
-.fin-map-chip .fin-them { color: #9ec1ff; }
+.fin-map-chip.fin-lean-you {
+  background: color-mix(in srgb, var(--fin-you, #3d8bfd) 22%, rgba(8, 10, 14, 0.88));
+  border-color: color-mix(in srgb, var(--fin-you, #3d8bfd) 40%, transparent);
+  box-shadow: inset 3px 0 0 var(--fin-you, #3d8bfd);
+}
+.fin-map-chip.fin-lean-them {
+  background: color-mix(in srgb, var(--fin-them, #ff5500) 22%, rgba(8, 10, 14, 0.88));
+  border-color: color-mix(in srgb, var(--fin-them, #ff5500) 40%, transparent);
+  box-shadow: inset 3px 0 0 var(--fin-them, #ff5500);
+}
+.fin-map-chip.fin-thin {
+  opacity: 0.58;
+}
+.fin-map-chip .fin-you,
+.fin-map-chip .fin-them {
+  min-width: 2.35em;
+  text-align: right;
+}
+.fin-map-chip .fin-you { color: var(--fin-you-soft, #9ec1ff); }
+.fin-map-chip .fin-them { color: var(--fin-them-soft, #ffb086); }
 .fin-map-chip .fin-sep { color: #6b7380; font-weight: 500; }
 `;
 
@@ -53,6 +83,23 @@ function wrOnly(stat: TeamMapStat): string {
 
 function chipHtml(you: TeamMapStat, them: TeamMapStat): string {
   return `<span class="fin-you">${wrOnly(you)}</span><span class="fin-sep">·</span><span class="fin-them">${wrOnly(them)}</span>`;
+}
+
+function chipLean(
+  you: TeamMapStat,
+  them: TeamMapStat,
+  adjust: boolean,
+): "you" | "them" | "even" {
+  const gap = pickAdvantage(you, them, adjust);
+  if (gap >= 0.05) return "you";
+  if (gap <= -0.05) return "them";
+  return "even";
+}
+
+function chipClassName(lean: "you" | "them" | "even", thin: boolean): string {
+  return ["fin-map-chip", `fin-lean-${lean}`, thin ? "fin-thin" : ""]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function isOwnUi(node: Element): boolean {
@@ -229,7 +276,13 @@ function sharedChipGutter(rows: Iterable<Element>): number {
   return gutter;
 }
 
-function placeChip(row: Element, mapKey: string, html: string, gutter: number): void {
+function placeChip(
+  row: Element,
+  mapKey: string,
+  html: string,
+  className: string,
+  gutter: number,
+): void {
   row.setAttribute(HOST_ATTR, mapKey);
   (row as HTMLElement).style.setProperty("--fin-chip-right", `${gutter}px`);
   const leftover = row.nextElementSibling;
@@ -243,13 +296,14 @@ function placeChip(row: Element, mapKey: string, html: string, gutter: number): 
   let chip = row.querySelector<HTMLElement>(`.fin-map-chip[${CHIP_ATTR}="${mapKey}"]`);
   if (!chip) {
     chip = document.createElement("span");
-    chip.className = "fin-map-chip";
+    chip.className = className;
     chip.setAttribute(CHIP_ATTR, mapKey);
     chip.innerHTML = html;
     row.append(chip);
     return;
   }
   if (chip.parentElement !== row) row.append(chip);
+  if (chip.className !== className) chip.className = className;
   if (chip.innerHTML !== html) chip.innerHTML = html;
 }
 
@@ -262,6 +316,8 @@ export async function injectMapCards(stats: LobbyStats): Promise<void> {
   const cards = findMapCards(stats.maps);
   if (cards.size < 3) return;
 
+  const settings = await loadSettings();
+  applyTeamColors(document.documentElement, settings.youColor, settings.themColor);
   const keep = new Set<string>();
   const gutter = sharedChipGutter(cards.values());
   for (const [mapKey, row] of cards) {
@@ -269,7 +325,14 @@ export async function injectMapCards(stats: LobbyStats): Promise<void> {
     const them = stats.them.maps.find((item) => item.mapKey === mapKey);
     if (!you || !them) continue;
     keep.add(mapKey);
-    placeChip(row, mapKey, chipHtml(you, them), gutter);
+    const thin = settings.thinSample && (isThin(you) || isThin(them));
+    placeChip(
+      row,
+      mapKey,
+      chipHtml(you, them),
+      chipClassName(chipLean(you, them, settings.adjust), thin),
+      gutter,
+    );
   }
 
   document.querySelectorAll<HTMLElement>(`.fin-map-chip[${CHIP_ATTR}]`).forEach((chip) => {
@@ -309,6 +372,7 @@ export function applyVisiblePool(stats: LobbyStats): LobbyStats {
 export function observeMapCards(
   getStats: () => LobbyStats | undefined,
   onStats?: (stats: LobbyStats) => void,
+  onMaybePicked?: () => void,
 ): MutationObserver {
   let timer: number | undefined;
   const observer = new MutationObserver((mutations) => {
@@ -324,6 +388,11 @@ export function observeMapCards(
       if (!stats) return;
       const next = applyVisiblePool(stats);
       onStats?.(next);
+      const cards = findMapCards(next.maps);
+      if (cards.size < 3 && pickedMapKeys(next).length === 0) {
+        onMaybePicked?.();
+        return;
+      }
       void injectMapCards(next);
     }, 800);
   });
