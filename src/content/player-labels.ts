@@ -14,6 +14,10 @@ import type { ThisGameLine } from "../lib/match-stats";
 const ATTR = "data-fin-label";
 const ROLE_ATTR = "data-fin-role";
 const STYLE_ID = "faceit-numbers-player-labels";
+// Bump on ANY badge rendering change (CSS, icons, structure): the repaint
+// dedup compares signatures against badges already in the DOM, which survive
+// extension updates — without a version, stale badges are never redrawn.
+const RENDER_VERSION = "v2";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -315,7 +319,7 @@ function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
   const span = document.createElement("span");
   span.className = `fin-player-label ${badge.tone}${badge.extraClass}${compact ? " compact" : ""}`;
   span.setAttribute(badge.attr, badge.playerId);
-  span.setAttribute("data-fin-sig", `${badge.text}:${badge.detail}`);
+  span.setAttribute("data-fin-sig", `${RENDER_VERSION}:${badge.text}:${badge.detail}`);
   span.setAttribute(
     "aria-label",
     `${badge.text}. ${badge.hint}. ${badge.detail}. ${badge.scope}`,
@@ -558,7 +562,8 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   }
   const existing = document.querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`);
   const wanted = badges.map(
-    (badge) => `${badge.attr}:${badge.playerId}:${badge.text}:${badge.detail}`,
+    (badge) =>
+      `${badge.attr}:${badge.playerId}:${RENDER_VERSION}:${badge.text}:${badge.detail}`,
   );
   const seen = [...existing].map((node) => {
     const attr = node.hasAttribute(ATTR) ? ATTR : ROLE_ATTR;
