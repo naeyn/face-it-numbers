@@ -70,6 +70,7 @@ const LABEL_CSS = `
   padding: 2px 9px !important;
 }
 .fin-player-label.role.compact { border-radius: 999px !important; }
+.fin-player-label.role.compact svg { width: 16px; height: 16px; }
 .fin-player-label.role:not(.compact) svg {
   width: 15px;
   height: 15px;
@@ -150,15 +151,15 @@ const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
   humiliation: "M2 13.5 11.5 4l2.5-2.5.5 3L5 14l-3 .5z",
   clutcher: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8-3-1-5-3.7-5-6.8V3.5z",
   highlight: "M8 1l1.8 5.2L15 8l-5.2 1.8L8 15l-1.8-5.2L1 8l5.2-1.8z",
-  opener: "M9 2h5v12H9v-1.5h3.5v-9H9zM1.8 8l4.7-3.5v2.3H9v2.4H6.5v2.3z",
+  opener: "M1.5 5.8h7.3V2.4L14.8 8l-6 5.6V10.2H1.5z",
   awper:
-    "M8 1.2a6.8 6.8 0 1 1 0 13.6A6.8 6.8 0 0 1 8 1.2zm0 2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6zm0 3.4a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z",
+    "M7.35.2h1.3v3h-1.3zM7.35 12.8h1.3v3h-1.3zM.2 7.35h3v1.3h-3zM12.8 7.35h3v1.3h-3zM8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6zm0 2.1a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6zm0 1.7a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z",
   onetapper:
-    "M7.4 1h1.2v3H7.4zM7.4 12h1.2v3H7.4zM1 7.4h3v1.2H1zM12 7.4h3v1.2h-3zM8 5.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z",
-  closer: "M3 1.5h1.5V15H3zM4.5 2h9l-2.2 3 2.2 3h-9z",
+    "M8 1.6a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2zM2 14.8c0-3.3 2.7-5.1 6-5.1s6 1.8 6 5.1zM8 3.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z",
+  closer: "M2.6 1h2V15h-2zM4.6 1.8h9.6l-2.6 3.4 2.6 3.4H4.6z",
   spacetaker:
-    "M1.5 1.5h5v2H3.9l3 3-1.4 1.4-3-3v2.6h-2zM14.5 14.5h-5v-2h2.6l-3-3 1.4-1.4 3 3V8.5h2z",
-  utilityking: "M6.5 1h3v2h-3zM8 3.6a4.9 4.9 0 1 1 0 9.8 4.9 4.9 0 0 1 0-9.8z",
+    "M1 1h6.2L4.9 3.3l3.2 3.2-1.6 1.6-3.2-3.2L1 7.2zM15 15H8.8l2.3-2.3-3.2-3.2 1.6-1.6 3.2 3.2L15 8.8z",
+  utilityking: "M5.8.6h4.4v2.5H5.8zM8 3.2a5.7 5.7 0 1 1 0 11.4A5.7 5.7 0 0 1 8 3.2z",
   pistoldemon:
     "M1.5 4h13v3.2H9.2l-.6 2.4c-.2.8-.7 1.2-1.5 1.2H4.6l1-3.6H3.2L1.5 5.4z",
   damagedealer:
