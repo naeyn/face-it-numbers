@@ -90,9 +90,9 @@ const ROLE_DEFS: RoleDef[] = [
       const zeus = line.roleStats.zeusKills ?? 0;
       if (knife + zeus >= 2 || (knife >= 1 && line.won)) {
         const parts = [];
-        if (knife) parts.push(`${knife} knife`);
-        if (zeus) parts.push(`${zeus} zeus`);
-        return `${parts.join(", ")} kill${knife + zeus > 1 ? "s" : ""}`;
+        if (knife) parts.push(`${knife} knife kill${knife > 1 ? "s" : ""}`);
+        if (zeus) parts.push(`${zeus} Zeus kill${zeus > 1 ? "s" : ""}`);
+        return parts.join(" and ");
       }
       return undefined;
     },
@@ -106,7 +106,10 @@ const ROLE_DEFS: RoleDef[] = [
       const v1 = line.roleStats.oneV1Wins ?? 0;
       const v2 = line.roleStats.oneV2Wins ?? 0;
       if (v1 + v2 >= 3 || (v1 + v2 >= 2 && v2 >= 1)) {
-        return `${v1} 1v1${v1 === 1 ? "" : "s"}, ${v2} 1v2${v2 === 1 ? "" : "s"} won`;
+        const parts = [];
+        if (v1) parts.push(`${v1} 1v1${v1 === 1 ? "" : "s"}`);
+        if (v2) parts.push(`${v2} 1v2${v2 === 1 ? "" : "s"}`);
+        return `Won ${v1 + v2} clutches: ${parts.join(" and ")}`;
       }
       return undefined;
     },
@@ -123,8 +126,8 @@ const ROLE_DEFS: RoleDef[] = [
       if (penta >= 1 || quadro >= 2 || triple >= 5) {
         const parts = [];
         if (penta) parts.push(`${penta} ace${penta > 1 ? "s" : ""}`);
-        if (quadro) parts.push(`${quadro} 4k`);
-        if (triple) parts.push(`${triple} 3k`);
+        if (quadro) parts.push(`${quadro} four-kill round${quadro > 1 ? "s" : ""}`);
+        if (triple) parts.push(`${triple} triple-kill round${triple > 1 ? "s" : ""}`);
         return parts.join(", ");
       }
       return undefined;
@@ -142,7 +145,7 @@ const ROLE_DEFS: RoleDef[] = [
       if (rate == null || count == null || wins == null || count <= 0) return undefined;
       const success = wins / count;
       if (rate >= OPENER_ENTRY_RATE && success >= OPENER_SUCCESS && holdsStrictMax(line, lines, entryRate)) {
-        return `${one(rate)} entry attempts/round (${count} att, ${wins} won) · most in lobby`;
+        return `Took the round's first duel ${count} times and won ${wins} — most first duels in this lobby`;
       }
       return undefined;
     },
@@ -156,7 +159,7 @@ const ROLE_DEFS: RoleDef[] = [
       const sniper = line.roleStats.sniperKills;
       if (sniper == null || sniper < AWPER_MIN_KILLS || line.kills <= 0) return undefined;
       if (sniper / line.kills >= AWPER_KILL_SHARE && holdsStrictMax(line, lines, (l) => l.roleStats.sniperKills)) {
-        return `${sniper} sniper kills (${Math.round((sniper / line.kills) * 100)}% of kills) · most in lobby`;
+        return `${sniper} of their ${line.kills} kills with a sniper rifle (${Math.round((sniper / line.kills) * 100)}%) — most in this lobby`;
       }
       return undefined;
     },
@@ -170,7 +173,7 @@ const ROLE_DEFS: RoleDef[] = [
       const pct = hsPct(line);
       if (pct == null || pct < ONETAP_MIN_HS_PCT || line.kills < ONETAP_MIN_KILLS) return undefined;
       if (holdsStrictMax(line, lines, hsPct)) {
-        return `${Math.round(pct)}% headshots on ${line.kills} kills · highest in lobby`;
+        return `${Math.round(pct)}% of their ${line.kills} kills were headshots — highest rate in this lobby`;
       }
       return undefined;
     },
@@ -185,7 +188,7 @@ const ROLE_DEFS: RoleDef[] = [
       if (mvps == null || mvps < CLOSER_MIN_MVPS || clutchWins(line) < 1) return undefined;
       if (!holdsStrictMax(line, lines, (l) => l.roleStats.mvps)) return undefined;
       if (holdsStrictMax(line, lines, entryRate)) return undefined; // that's an opener
-      return `${mvps} MVPs, ${clutchWins(line)} clutch${clutchWins(line) > 1 ? "es" : ""} won · most MVPs in lobby`;
+      return `${mvps} round-MVP stars (most in this lobby) and ${clutchWins(line)} clutch${clutchWins(line) > 1 ? "es" : ""} won`;
     },
   },
   {
@@ -201,7 +204,7 @@ const ROLE_DEFS: RoleDef[] = [
       const success = wins / count;
       // the aggressive lobby-max entry player who fell through Opener
       if (rate >= OPENER_ENTRY_RATE && success < OPENER_SUCCESS && holdsStrictMax(line, lines, entryRate)) {
-        return `${one(rate)} entry attempts/round (${count} att) · most in lobby, takes the map on`;
+        return `Took the round's first duel ${count} times — most in this lobby, win or lose`;
       }
       return undefined;
     },
@@ -220,8 +223,8 @@ const ROLE_DEFS: RoleDef[] = [
         holdsStrictMax(line, lines, (l) => perRound(l.roleStats.utilityDamage, l.roleStats.rounds))
       ) {
         const flashed = line.roleStats.enemiesFlashed;
-        const flashedPart = flashed != null ? `, ${flashed} enemies flashed` : "";
-        return `${Math.round(utilDmg)} utility damage${flashedPart} · most in lobby`;
+        const flashedPart = flashed ? ` and flashed ${flashed} enemies` : "";
+        return `Dealt ${Math.round(utilDmg)} damage with grenades (most in this lobby)${flashedPart}`;
       }
       return undefined;
     },
@@ -235,7 +238,7 @@ const ROLE_DEFS: RoleDef[] = [
       const pistol = line.roleStats.pistolKills;
       if (pistol == null || pistol < PISTOL_MIN_KILLS || line.kills <= 0) return undefined;
       if (pistol / line.kills >= PISTOL_KILL_SHARE) {
-        return `${pistol} pistol kills (${Math.round((pistol / line.kills) * 100)}% of kills)`;
+        return `${pistol} of their ${line.kills} kills with a pistol (${Math.round((pistol / line.kills) * 100)}%)`;
       }
       return undefined;
     },
@@ -249,7 +252,7 @@ const ROLE_DEFS: RoleDef[] = [
       if (line.adr == null) return undefined;
       if (!holdsStrictMax(line, lines, (l) => l.adr)) return undefined;
       if (holdsStrictMax(line, lines, (l) => l.kills)) return undefined; // just the top fragger
-      return `${Math.round(line.adr)} ADR · highest in lobby without most kills`;
+      return `${Math.round(line.adr)} damage per round — highest in this lobby, without the most kills`;
     },
   },
   {
@@ -261,7 +264,7 @@ const ROLE_DEFS: RoleDef[] = [
       const ratio = line.assists / Math.max(line.kills, 1);
       if (line.assists < SUPPORT_MIN_ASSISTS || line.kd >= SUPPORT_MAX_KD) return undefined;
       if (holdsStrictMax(line, lines, (l) => l.assists / Math.max(l.kills, 1))) {
-        return `${line.assists} assists (${one(ratio)} per kill) · highest ratio in lobby`;
+        return `${line.assists} assists next to ${line.kills} kills (${one(ratio)} per kill) — highest assist ratio in this lobby`;
       }
       return undefined;
     },

@@ -62,7 +62,10 @@ const LABEL_CSS = `
 .fin-player-label.bad { background: #4a2a1f !important; color: #f0b090 !important; }
 .fin-player-label.cold { background: #4a1f1f !important; color: #ff9a9a !important; }
 .fin-player-label.info { background: #2a3344 !important; color: #9ec1ff !important; }
-.fin-player-label.role { box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+/* Role pendants: outlined, vs the filled performance labels */
+.fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
+.fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
+.fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -88,6 +91,13 @@ const LABEL_CSS = `
   margin-top: 5px;
   font-size: 11px;
 }
+#fin-label-tip .fin-tip-scope {
+  color: #78859a;
+  margin-top: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 `;
 
 const TIP_ID = "fin-label-tip";
@@ -106,18 +116,19 @@ const LABEL_HINTS: Record<GameLabelKey, string> = {
 };
 
 const ROLE_HINTS: Record<RoleLabelKey, string> = {
-  humiliation: "Knife or Zeus kills — the classic announcer award",
-  clutcher: "Won multiple 1vX clutches this match",
-  highlight: "Multi-kill rounds worth rewatching",
-  opener: "Most opening duels in the lobby, and won them",
-  awper: "Most sniper kills in the lobby",
-  onetapper: "Highest headshot rate in the lobby",
-  closer: "Most MVPs plus a clutch — finishes rounds",
-  spacetaker: "Most opening attempts — takes space for the team",
-  utilityking: "Most utility damage in the lobby",
-  pistoldemon: "Big share of kills with pistols",
-  damagedealer: "Top damage without top kills",
-  support: "Highest assist ratio in the lobby",
+  humiliation: "Got knife or Zeus kills — the classic announcer award",
+  clutcher: "Won multiple 1-versus-X clutch rounds",
+  highlight: "Had multi-kill rounds worth rewatching",
+  opener: "Entry fragger: took the round's first duel most often, and won them",
+  awper: "The lobby's sniper: biggest share of kills with a sniper rifle",
+  onetapper: "Cleanest aim in the lobby: highest headshot rate",
+  closer: "Finished rounds: the most MVP stars, plus clutches",
+  spacetaker:
+    "Took the round's first duel most often, even when losing it — creates space",
+  utilityking: "Dealt the most grenade damage in the lobby",
+  pistoldemon: "Got a big share of their kills with pistols",
+  damagedealer: "Top damage output without converting it into the most kills",
+  support: "Set up teammates more than they fragged themselves",
 };
 
 const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
@@ -172,6 +183,7 @@ type Badge = {
   tone: string;
   hint: string;
   detail: string;
+  scope: string;
   iconPath: string;
   attr: string;
   extraClass: string;
@@ -185,6 +197,7 @@ function badgeFromLabel(label: GameLabel): Badge {
     tone: label.tone,
     hint: LABEL_HINTS[label.key],
     detail: label.detail,
+    scope: "Form · this game vs their previous 30 games",
     iconPath: ICON_PATHS[label.key],
     attr: ATTR,
     extraClass: "",
@@ -199,6 +212,7 @@ function badgeFromRole(role: RoleLabel): Badge {
     tone: role.tone,
     hint: ROLE_HINTS[role.key],
     detail: role.detail,
+    scope: "Role · this match only, vs the other 9 players",
     iconPath: ROLE_ICON_PATHS[role.key],
     attr: ROLE_ATTR,
     extraClass: " role",
@@ -222,7 +236,10 @@ function showTip(anchor: HTMLElement, badge: Badge): void {
   const detail = document.createElement("div");
   detail.className = "fin-tip-detail";
   detail.textContent = badge.detail;
-  tip.append(name, hint, detail);
+  const scope = document.createElement("div");
+  scope.className = "fin-tip-scope";
+  scope.textContent = badge.scope;
+  tip.append(name, hint, detail, scope);
   document.documentElement.append(tip);
   const rect = anchor.getBoundingClientRect();
   const width = tip.offsetWidth;
@@ -283,7 +300,10 @@ function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
   span.className = `fin-player-label ${badge.tone}${badge.extraClass}${compact ? " compact" : ""}`;
   span.setAttribute(badge.attr, badge.playerId);
   span.setAttribute("data-fin-sig", `${badge.text}:${badge.detail}`);
-  span.setAttribute("aria-label", `${badge.text}. ${badge.hint}. ${badge.detail}`);
+  span.setAttribute(
+    "aria-label",
+    `${badge.text}. ${badge.hint}. ${badge.detail}. ${badge.scope}`,
+  );
   span.addEventListener("mouseenter", () => showTip(span, badge));
   span.addEventListener("mouseleave", hideTip);
   if (compact) span.append(iconFor(badge.iconPath));
