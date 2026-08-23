@@ -52,11 +52,14 @@ async function fetchOnce(
     credentials: "omit",
   });
 
-  if ((response.status === 429 || response.status === 503) && attempt < 3) {
+  if ((response.status === 429 || response.status === 503) && attempt < 2) {
     const retryAfter = Number(response.headers.get("Retry-After"));
-    const waitMs = Number.isFinite(retryAfter)
-      ? retryAfter * 1000
-      : 800 * 2 ** attempt;
+    // Cap the wait: an honest Retry-After of 30s+ must not stall the whole
+    // refresh pipeline — better to fail this request and degrade.
+    const waitMs = Math.min(
+      Number.isFinite(retryAfter) ? retryAfter * 1000 : 800 * 2 ** attempt,
+      2000,
+    );
     await sleep(waitMs);
     return fetchOnce(url, token, attempt + 1);
   }
@@ -75,6 +78,11 @@ export async function faceitGet(
     const response = await fetchOnce(url, token, 0);
     if (response.status === 404) {
       throw new FaceitApiError(404, "Not found");
+    }
+    if (response.status === 429) {
+      // Rate limited after retries: trying the fallback base would only add
+      // more pressure on the same limiter. Fail fast; callers degrade.
+      throw new FaceitApiError(429, "Rate limited by Faceit.");
     }
     if (response.status === 401 || response.status === 403) {
       lastError = new FaceitApiError(

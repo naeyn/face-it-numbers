@@ -13,6 +13,7 @@ import { fetchThisGame, isMatchFinished } from "./lib/match-stats";
 import {
   CACHE_TTL_MS,
   FETCH_CONCURRENCY,
+  HISTORY_SOFT_DEADLINE_MS,
   LABEL_HISTORY_PAGES,
   PLAYER_FETCH_CONCURRENCY,
   SAMPLE_LIMIT,
@@ -166,16 +167,25 @@ async function getLobbyStats(
     try {
       const lines = await fetchThisGame(match.match_id ?? matchId, KNOWN_MAPS, token);
       const asOf = isMatchFinished(match.status ?? "") ? matchAt : undefined;
+      // Soft deadline: the as-of backfill can mean dozens of history
+      // requests on an old room. If it is slow (rate limits), paint with the
+      // shallow histories now — it keeps filling histCache in the background
+      // and the next poll upgrades the labels.
       const labelHistories =
         asOf != null
-          ? await historiesAsOf(
-              roster,
-              statsByPlayer,
-              KNOWN_MAPS,
-              token,
-              match.match_id ?? matchId,
-              asOf,
-            )
+          ? await Promise.race([
+              historiesAsOf(
+                roster,
+                statsByPlayer,
+                KNOWN_MAPS,
+                token,
+                match.match_id ?? matchId,
+                asOf,
+              ),
+              new Promise<typeof statsByPlayer>((resolve) => {
+                setTimeout(() => resolve(statsByPlayer), HISTORY_SOFT_DEADLINE_MS);
+              }),
+            ])
           : statsByPlayer;
       labels = assignGameLabels(
         match.match_id ?? matchId,
