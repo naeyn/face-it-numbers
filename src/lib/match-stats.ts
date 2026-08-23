@@ -206,14 +206,11 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
           "Damage / Round",
           "i20",
         );
-        if (merged.size === 0) {
-          // Phase-0 verification: surface one player's raw stats per parse so
-          // a live finished match confirms field spellings AND value ranges.
-          console.info(
-            "[fin] player_stats sample",
-            nickname,
-            JSON.stringify(stats),
-          );
+        if (!merged.has(playerId)) {
+          // Phase-0 verification: surface every player's raw stats once so a
+          // live finished match pins the compact-key mapping by value-matching
+          // against a known scoreboard.
+          console.info("[fin] player_stats", nickname, JSON.stringify(stats));
         }
         const roleStats = parseRoleStats(stats);
         roleStats.rounds = roundCount;
