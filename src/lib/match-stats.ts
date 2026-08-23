@@ -62,14 +62,16 @@ function addNullable(a: number | null, b: number | null): number | null {
   return a + b;
 }
 
-// Field names per Faceit's CS2 advanced stats; alias-heavy on purpose — any
-// key that is absent in the live payload leaves the stat null and the roles
-// that need it simply never fire.
+// Named keys only — the compact i-keys are NOT trusted here because their
+// meaning differs between Faceit stats endpoints (aliasing them caused false
+// awards). Any key absent in the live payload leaves the stat null and the
+// roles that need it simply never fire. Extend aliases only from a verified
+// "[fin] player_stats keys" dump.
 function parseRoleStats(stats: Record<string, unknown>): RoleStats {
   return {
     rounds: null,
-    entryCount: pickNum(stats, "Entry Count", "Match Entry Count", "First Kills"),
-    entryWins: pickNum(stats, "Entry Wins", "Match Entry Wins", "First Kill Wins"),
+    entryCount: pickNum(stats, "Entry Count", "Match Entry Count"),
+    entryWins: pickNum(stats, "Entry Wins", "Match Entry Wins"),
     sniperKills: pickNum(stats, "Sniper Kills", "Total Sniper Kills"),
     utilityDamage: pickNum(stats, "Utility Damage", "Total Utility Damage"),
     enemiesFlashed: pickNum(stats, "Enemies Flashed", "Total Enemies Flashed"),
@@ -78,15 +80,15 @@ function parseRoleStats(stats: Record<string, unknown>): RoleStats {
     oneV1Count: pickNum(stats, "1v1Count", "Match 1v1 Count", "1v1 Count"),
     oneV2Wins: pickNum(stats, "1v2Wins", "Match 1v2 Wins", "1v2 Wins"),
     oneV2Count: pickNum(stats, "1v2Count", "Match 1v2 Count", "1v2 Count"),
-    tripleKills: pickNum(stats, "Triple Kills", "i13"),
-    quadroKills: pickNum(stats, "Quadro Kills", "i14"),
-    pentaKills: pickNum(stats, "Penta Kills", "i15"),
-    mvps: pickNum(stats, "MVPs", "i12"),
+    tripleKills: pickNum(stats, "Triple Kills"),
+    quadroKills: pickNum(stats, "Quadro Kills"),
+    pentaKills: pickNum(stats, "Penta Kills"),
+    mvps: pickNum(stats, "MVPs"),
     pistolKills: pickNum(stats, "Pistol Kills"),
     knifeKills: pickNum(stats, "Knife Kills"),
     zeusKills: pickNum(stats, "Zeus Kills"),
-    headshots: pickNum(stats, "Headshots", "i9"),
-    headshotPct: pickNum(stats, "Headshots %", "i16", "c4"),
+    headshots: pickNum(stats, "Headshots"),
+    headshotPct: pickNum(stats, "Headshots %"),
   };
 }
 
@@ -207,7 +209,7 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
         if (merged.size === 0) {
           // Phase-0 verification: surface the raw key set once per parse so a
           // live finished match confirms the advanced-stat field spellings.
-          console.debug("[fin] player_stats keys", Object.keys(stats).sort());
+          console.info("[fin] player_stats keys", Object.keys(stats).sort());
         }
         const roleStats = parseRoleStats(stats);
         roleStats.rounds = roundCount;

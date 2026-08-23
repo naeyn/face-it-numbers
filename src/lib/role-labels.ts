@@ -121,7 +121,7 @@ const ROLE_DEFS: RoleDef[] = [
       const triple = line.roleStats.tripleKills ?? 0;
       const quadro = line.roleStats.quadroKills ?? 0;
       const penta = line.roleStats.pentaKills ?? 0;
-      if (penta >= 1 || quadro >= 2 || triple >= 4) {
+      if (penta >= 1 || quadro >= 2 || triple >= 5) {
         const parts = [];
         if (penta) parts.push(`${penta} ace${penta > 1 ? "s" : ""}`);
         if (quadro) parts.push(`${quadro} 4k`);
@@ -273,6 +273,11 @@ const ROLE_DEFS: RoleDef[] = [
 // Phase 1 ships none; the Leetify phase adds baiter/teamflasher here.
 export const BANTER_ROLE_KEYS: ReadonlySet<string> = new Set<string>([]);
 
+// An "absolute" role that fires for this many players isn't discriminating —
+// either the stat means something else in this payload or the thresholds are
+// off for this match. Award nobody rather than flood the scoreboard.
+const MAX_ABSOLUTE_AWARDS = 3;
+
 export function assignRoleLabels(lines: ThisGameLine[]): RoleLabel[] {
   const usable = lines.filter((line): line is Line => line.roleStats != null);
   if (usable.length < MIN_LINES) return [];
@@ -280,11 +285,12 @@ export function assignRoleLabels(lines: ThisGameLine[]): RoleLabel[] {
   const taken = new Set<string>();
 
   for (const def of ROLE_DEFS) {
+    const awarded: RoleLabel[] = [];
     for (const line of usable) {
       if (taken.has(line.playerId)) continue;
       const detail = def.qualify(line, usable);
       if (!detail) continue;
-      roles.push({
+      awarded.push({
         playerId: line.playerId,
         nickname: line.nickname,
         key: def.key,
@@ -292,8 +298,12 @@ export function assignRoleLabels(lines: ThisGameLine[]): RoleLabel[] {
         tone: def.tone,
         detail,
       });
-      taken.add(line.playerId);
       if (!def.absolute) break; // lobby-relative roles award at most once
+    }
+    if (def.absolute && awarded.length > MAX_ABSOLUTE_AWARDS) continue;
+    for (const role of awarded) {
+      roles.push(role);
+      taken.add(role.playerId);
     }
   }
 
