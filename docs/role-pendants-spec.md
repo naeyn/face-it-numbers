@@ -5,10 +5,42 @@ A second, orthogonal badge family shown next to the existing post-game performan
 role pendants say *what job you did* (role axis). A player can carry one of each,
 side by side.
 
-Status: **Phase 0 + Phase 1 implemented** on `feature/role-pendants` (parser widened
-with a temporary `console.debug` key dump for field verification; 12 Faceit-side roles
-live behind `roleLabels`/`banterLabels` toggles). Phases 2a/2b (Leetify) not started —
-blocked on live-payload verification of field spellings and the roster steam64 key.
+Status: **Phase 0 complete, Phase 1 implemented and field-verified** on
+`feature/role-pendants`. Phases 2a/2b (Leetify) not started. The roster→steam64 path
+for Phase 2 is confirmed: Faceit's `/users/v1/users/{id}` exposes
+`platforms.steam.id64` / `games.cs2.game_id`.
+
+## Verified compact-key dictionary (Phase 0 result, 2026-08-23)
+
+`/stats/v1/stats/matches/{id}` returns ONLY compact keys — no named keys. No public
+mapping exists; this one was derived by cross-referencing 13 live player rows (two
+matches) against Leetify named stats for the same match plus arithmetic invariants,
+each locked key matching 10/10 players exactly:
+
+| key | meaning | proof |
+|---|---|---|
+| `i6` / `i7` / `i8` | kills / assists / deaths | matches scoreboard |
+| `i9` | **MVPs** | = Leetify `mvps`, 10/10 |
+| `i10` | result (0/1) | |
+| `i13` | **headshot kills** | = `c4`·kills; = Leetify `total_hs_kills` (NOT triple kills — the time-stats dictionary does not apply) |
+| `i14` / `i15` / `i16` | triple / quadro / penta kills | = Leetify `multi3k/4k/5k`, 10/10 |
+| `i20` | **total damage** (not ADR) | ADR = `i20`/rounds = `c10` |
+| `i21` / `i22` | entry count / entry wins | lobby sum of `i22` = round count (one first-kill per round); sum of `i21` = 2× rounds (both duelists); `c11` = `i22/i21`, `c12` = `i21`/rounds |
+| `i23` / `i24` | 1v1 count / wins | `c13` = `i24/i23`, 10/10 |
+| `i25` / `i26` | 1v2 count / wins | `c14` = `i26/i25` |
+| `i27` / `i28` / `i29` | enemies flashed / flashes thrown / flash successes | `i28` = Leetify `flashbang_thrown` 10/10; `c15`/`c17` per-round forms; `i29 ≤ i27` invariant holds 13/13 |
+| `i30` / `i31` / `i33` | utility damage / HE thrown / utility successes | `i31` = Leetify `he_thrown` 10/10; `c18` = `i30/i31`, `c19` = `i30`/rounds, `c20` = `i33/i31`, `c21` = `i31`/rounds |
+| `i39` | sniper kills | `c36` = `i39`/rounds, `c22` = `i39`/kills |
+| `i40` | double kills | = Leetify `multi2k`, 10/10 |
+| `c2` / `c3` / `c4` / `c10` | K/D, K/R, HS%, ADR | arithmetic |
+| `i32`, `i34`, `i35`, `i38` | **unknown** | tested against Leetify trade stats — no match |
+| `i36`, `i37` | unknown (all zero in samples; suspected knife/zeus) | unproven |
+
+Consequences: pistol/knife/zeus kills have no verified key → **Pistol demon and
+Humiliation are dormant** (their stats parse null and the roles never fire) until a
+match with visible nonzero values pins `i32`/`i34`/`i35`/`i38`/`i36`/`i37`. Rounds per
+player fall back to `round(i20/c10)` when the round header is missing. The `c16` ratio
+also remains unidentified.
 
 Naming principle: every badge name is a term casters, coaches, or the game itself already
 use (entry, lurker, space taker, closer, one-tap, Humiliation) — or clearly playful

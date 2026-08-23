@@ -9,10 +9,9 @@ const OPENER_SUCCESS = 0.45;
 const AWPER_MIN_KILLS = 7;
 const AWPER_KILL_SHARE = 0.35;
 const UTILITY_MIN_DAMAGE = 120;
-const UTILITY_FLASHED_RATE = 0.5;
 const ONETAP_MIN_HS_PCT = 65;
 const ONETAP_MIN_KILLS = 15;
-const CLOSER_MIN_MVPS = 6;
+const CLOSER_MIN_MVPS = 5;
 const PISTOL_MIN_KILLS = 7;
 const PISTOL_KILL_SHARE = 0.3;
 const SUPPORT_MIN_ASSISTS = 10;
@@ -215,14 +214,14 @@ const ROLE_DEFS: RoleDef[] = [
     qualify: (line, lines) => {
       const utilDmg = line.roleStats.utilityDamage;
       const utilRate = perRound(utilDmg, line.roleStats.rounds);
-      const flashedRate = perRound(line.roleStats.enemiesFlashed, line.roleStats.rounds);
-      if (utilDmg == null || utilRate == null || flashedRate == null) return undefined;
+      if (utilDmg == null || utilRate == null) return undefined;
       if (
         utilDmg >= UTILITY_MIN_DAMAGE &&
-        flashedRate >= UTILITY_FLASHED_RATE &&
         holdsStrictMax(line, lines, (l) => perRound(l.roleStats.utilityDamage, l.roleStats.rounds))
       ) {
-        return `${Math.round(utilDmg)} utility damage, ${line.roleStats.enemiesFlashed} enemies flashed · most in lobby`;
+        const flashed = line.roleStats.enemiesFlashed;
+        const flashedPart = flashed != null ? `, ${flashed} enemies flashed` : "";
+        return `${Math.round(utilDmg)} utility damage${flashedPart} · most in lobby`;
       }
       return undefined;
     },

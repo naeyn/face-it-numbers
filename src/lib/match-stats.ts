@@ -62,33 +62,36 @@ function addNullable(a: number | null, b: number | null): number | null {
   return a + b;
 }
 
-// Named keys only — the compact i-keys are NOT trusted here because their
-// meaning differs between Faceit stats endpoints (aliasing them caused false
-// awards). Any key absent in the live payload leaves the stat null and the
-// roles that need it simply never fire. Extend aliases only from a verified
-// "[fin] player_stats keys" dump.
+// Compact-key mapping for /stats/v1/stats/matches, VERIFIED empirically on
+// 2026-08-23 by cross-referencing two live payloads (13 player rows) against
+// Leetify named stats for the same match plus arithmetic invariants (entry
+// wins sum to the round count, c-keys are per-round/ratio forms of i-keys).
+// See docs/role-pendants-spec.md for the full dictionary and proofs.
+// Named aliases are kept in case other endpoint shapes use them.
+// Pistol/knife/zeus have no verified compact key yet — named-only, so the
+// roles that need them stay dormant rather than misfire.
 function parseRoleStats(stats: Record<string, unknown>): RoleStats {
   return {
     rounds: null,
-    entryCount: pickNum(stats, "Entry Count", "Match Entry Count"),
-    entryWins: pickNum(stats, "Entry Wins", "Match Entry Wins"),
-    sniperKills: pickNum(stats, "Sniper Kills", "Total Sniper Kills"),
-    utilityDamage: pickNum(stats, "Utility Damage", "Total Utility Damage"),
-    enemiesFlashed: pickNum(stats, "Enemies Flashed", "Total Enemies Flashed"),
-    flashSuccesses: pickNum(stats, "Flash Successes", "Total Flash Successes"),
-    oneV1Wins: pickNum(stats, "1v1Wins", "Match 1v1 Wins", "1v1 Wins"),
-    oneV1Count: pickNum(stats, "1v1Count", "Match 1v1 Count", "1v1 Count"),
-    oneV2Wins: pickNum(stats, "1v2Wins", "Match 1v2 Wins", "1v2 Wins"),
-    oneV2Count: pickNum(stats, "1v2Count", "Match 1v2 Count", "1v2 Count"),
-    tripleKills: pickNum(stats, "Triple Kills"),
-    quadroKills: pickNum(stats, "Quadro Kills"),
-    pentaKills: pickNum(stats, "Penta Kills"),
-    mvps: pickNum(stats, "MVPs"),
+    entryCount: pickNum(stats, "Entry Count", "i21"),
+    entryWins: pickNum(stats, "Entry Wins", "i22"),
+    sniperKills: pickNum(stats, "Sniper Kills", "i39"),
+    utilityDamage: pickNum(stats, "Utility Damage", "i30"),
+    enemiesFlashed: pickNum(stats, "Enemies Flashed", "i27"),
+    flashSuccesses: pickNum(stats, "Flash Successes", "i29"),
+    oneV1Count: pickNum(stats, "1v1Count", "i23"),
+    oneV1Wins: pickNum(stats, "1v1Wins", "i24"),
+    oneV2Count: pickNum(stats, "1v2Count", "i25"),
+    oneV2Wins: pickNum(stats, "1v2Wins", "i26"),
+    tripleKills: pickNum(stats, "Triple Kills", "i14"),
+    quadroKills: pickNum(stats, "Quadro Kills", "i15"),
+    pentaKills: pickNum(stats, "Penta Kills", "i16"),
+    mvps: pickNum(stats, "MVPs", "i9"),
     pistolKills: pickNum(stats, "Pistol Kills"),
     knifeKills: pickNum(stats, "Knife Kills"),
     zeusKills: pickNum(stats, "Zeus Kills"),
-    headshots: pickNum(stats, "Headshots"),
-    headshotPct: pickNum(stats, "Headshots %"),
+    headshots: pickNum(stats, "Headshots", "i13"),
+    headshotPct: pickNum(stats, "Headshots %", "c4"),
   };
 }
 
@@ -199,21 +202,26 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
         const kd =
           pickNum(stats, "K/D Ratio", "K/D", "c2", "kd") ??
           (deaths > 0 ? kills / deaths : kills);
-        const adr = pickNum(
+        // i20 is TOTAL damage on this endpoint, not ADR — real ADR is c10.
+        const totalDamage = pickNum(stats, "Damage", "i20");
+        const namedAdr = pickNum(
           stats,
           "ADR",
           "Average Damage per Round",
           "Damage / Round",
-          "i20",
+          "c10",
         );
-        if (!merged.has(playerId)) {
-          // Phase-0 verification: surface every player's raw stats once so a
-          // live finished match pins the compact-key mapping by value-matching
-          // against a known scoreboard.
-          console.info("[fin] player_stats", nickname, JSON.stringify(stats));
-        }
         const roleStats = parseRoleStats(stats);
-        roleStats.rounds = roundCount;
+        roleStats.rounds =
+          roundCount ??
+          (totalDamage != null && namedAdr != null && namedAdr > 0
+            ? Math.round(totalDamage / namedAdr)
+            : null);
+        const adr =
+          namedAdr ??
+          (totalDamage != null && roleStats.rounds != null && roleStats.rounds > 0
+            ? totalDamage / roleStats.rounds
+            : null);
         const prev = merged.get(playerId);
         if (!prev) {
           merged.set(playerId, {
