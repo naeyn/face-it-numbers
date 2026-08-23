@@ -62,7 +62,22 @@ const LABEL_CSS = `
 .fin-player-label.bad { background: #4a2a1f !important; color: #f0b090 !important; }
 .fin-player-label.cold { background: #4a1f1f !important; color: #ff9a9a !important; }
 .fin-player-label.info { background: #2a3344 !important; color: #9ec1ff !important; }
-/* Role pendants: outlined, vs the filled performance labels */
+/* Badge language: FORM labels = filled squares (above); ROLE pendants =
+   outlined pills with an always-visible icon; pre-game brief tags in the
+   overlay = dashed outlines. */
+.fin-player-label.role {
+  border-radius: 999px !important;
+  padding: 2px 9px !important;
+}
+.fin-player-label.role.compact { border-radius: 999px !important; }
+.fin-player-label.role:not(.compact) svg {
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+  flex: 0 0 11px;
+  fill: currentColor;
+  pointer-events: none;
+}
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
@@ -306,8 +321,15 @@ function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
   );
   span.addEventListener("mouseenter", () => showTip(span, badge));
   span.addEventListener("mouseleave", hideTip);
-  if (compact) span.append(iconFor(badge.iconPath));
-  else span.textContent = badge.text;
+  if (compact) {
+    span.append(iconFor(badge.iconPath));
+  } else if (badge.attr === ROLE_ATTR) {
+    // Role pendants always carry their icon — part of the visual language
+    // separating them from the filled form labels.
+    span.append(iconFor(badge.iconPath), document.createTextNode(badge.text));
+  } else {
+    span.textContent = badge.text;
+  }
   return span;
 }
 
