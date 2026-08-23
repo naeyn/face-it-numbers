@@ -1,7 +1,7 @@
 {
   "name": "face-it-numbers",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Chrome extension: CS2 map play/win rates during Faceit lobby veto",
   "scripts": {
