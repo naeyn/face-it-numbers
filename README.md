@@ -52,4 +52,6 @@ The tag is the single source of truth for the version: the workflow stamps it in
 
 ## Privacy
 
-Requests go only to `www.faceit.com` and `api.faceit.com`. A Faceit session cookie may be used so those requests succeed while you are logged in. Nothing is sent to a third-party server.
+Requests go only to `www.faceit.com` and `api.faceit.com`. A Faceit session cookie may be used so those requests succeed while you are logged in. Nothing is sent to a third-party server. Full policy: [PRIVACY.md](PRIVACY.md).
+
+Faceit Numbers is an unofficial project and is not affiliated with or endorsed by FACEIT.

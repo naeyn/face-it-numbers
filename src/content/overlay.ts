@@ -35,6 +35,7 @@ import { extensionVersion } from "../lib/version";
 
 const HOST_ID = "faceit-numbers-overlay";
 const POS_KEY = "finOverlayPos";
+const ONBOARD_KEY = "finOnboarded";
 
 type OverlayCallbacks = {
   onSwap: () => void;
@@ -65,6 +66,7 @@ export class Overlay {
   private onMouseUp: () => void;
   private tip: HTMLDivElement;
   private paintKey = "";
+  private onboardEl: HTMLDivElement | undefined;
 
   constructor(callbacks: OverlayCallbacks) {
     this.callbacks = callbacks;
@@ -125,6 +127,12 @@ export class Overlay {
         this.tab = "brief";
         this.paintKey = "";
         this.render(this.latestStats);
+      } else if (action === "onboard-done") {
+        void this.finishOnboarding();
+      } else if (action === "onboard-settings") {
+        if (extensionAlive()) {
+          void chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+        }
       }
     });
 
@@ -786,13 +794,49 @@ export class Overlay {
   private async restoreState(): Promise<void> {
     if (!extensionAlive()) return;
     try {
-      const stored = await chrome.storage.local.get(POS_KEY);
+      const stored = await chrome.storage.local.get([POS_KEY, ONBOARD_KEY]);
       const pos = stored[POS_KEY] as { left?: string; top?: string } | undefined;
       if (pos?.left) this.panel.style.left = pos.left;
       if (pos?.top) this.panel.style.top = pos.top;
       this.settings = await loadSettings();
       applyTeamColors(this.host, this.settings.youColor, this.settings.themColor);
       if (this.latestStats) this.render(this.latestStats);
+      if (!stored[ONBOARD_KEY]) this.showOnboarding();
+    } catch (error) {
+      if (!isContextInvalidated(error)) throw error;
+    }
+  }
+
+  private showOnboarding(): void {
+    if (this.onboardEl) return;
+    const el = document.createElement("div");
+    el.className = "onboard";
+    el.innerHTML = `
+      <h2>Welcome to <span>Faceit Numbers</span></h2>
+      <p>During map veto this panel compares both teams' win rates per map, built from each player's last 30 Faceit matches.</p>
+      <ul>
+        <li>Drag the header to move the panel; click a map's bars for per-player details.</li>
+        <li>Hit <b>Swap teams</b> if the sides look reversed.</li>
+        <li>Extras — pre-match briefing, performance labels, smart pick — live in the toolbar icon menu.</li>
+      </ul>
+      <p class="fine">Stats are read through your logged-in Faceit session. Requests go only to faceit.com — nothing is collected or sent anywhere else.</p>
+      <div class="actions">
+        <button type="button" class="primary" data-action="onboard-done">Got it</button>
+        <button type="button" data-action="onboard-settings">Settings</button>
+      </div>
+    `;
+    this.onboardEl = el;
+    this.body.style.display = "none";
+    this.panel.append(el);
+  }
+
+  private async finishOnboarding(): Promise<void> {
+    this.onboardEl?.remove();
+    this.onboardEl = undefined;
+    this.body.style.display = this.collapsed ? "none" : "";
+    if (!extensionAlive()) return;
+    try {
+      await chrome.storage.local.set({ [ONBOARD_KEY]: true });
     } catch (error) {
       if (!isContextInvalidated(error)) throw error;
     }
@@ -800,7 +844,8 @@ export class Overlay {
 
   private toggleCollapsed(): void {
     this.collapsed = !this.collapsed;
-    this.body.style.display = this.collapsed ? "none" : "";
+    this.body.style.display = this.collapsed || this.onboardEl ? "none" : "";
+    if (this.onboardEl) this.onboardEl.style.display = this.collapsed ? "none" : "";
     const button = this.header.querySelector('[data-action="collapse"]');
     if (button) button.textContent = this.collapsed ? "+" : "−";
   }

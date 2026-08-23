@@ -389,6 +389,40 @@ button.on {
 
 .tip .tip-title { font-weight: 800; margin-bottom: 2px; }
 .tip .tip-body { color: #c5cdd8; }
+
+.onboard {
+  padding: 12px 14px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #ddd;
+}
+
+.onboard h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.onboard h2 span { color: #ff5500; }
+.onboard p { margin: 0 0 8px; }
+.onboard ul { margin: 0 0 8px; padding-left: 16px; }
+.onboard li { margin-bottom: 4px; }
+.onboard .fine { color: #9a9a9a; font-size: 11px; }
+
+.onboard .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.onboard .actions .primary {
+  background: #ff5500;
+  border-color: #ff5500;
+  color: #fff;
+}
+
+.onboard .actions .primary:hover { background: #ff6a1f; }
 `;
 
 export function overlayStyles(): string {

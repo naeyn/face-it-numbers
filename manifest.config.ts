@@ -9,8 +9,14 @@ export default defineManifest({
   manifest_version: 3,
   name: "Faceit Numbers",
   description:
-    "CS2 map play and win rates for your team and enemies during Faceit lobby veto",
+    "CS2 map play and win rates for both teams during Faceit lobby veto. Unofficial — not affiliated with FACEIT.",
   version,
+  icons: {
+    16: "icons/icon16.png",
+    32: "icons/icon32.png",
+    48: "icons/icon48.png",
+    128: "icons/icon128.png",
+  },
   permissions: ["storage", "cookies"],
   host_permissions: [
     "https://www.faceit.com/*",
@@ -33,6 +39,11 @@ export default defineManifest({
   },
   action: {
     default_title: "Faceit Numbers",
+    default_icon: {
+      16: "icons/icon16.png",
+      32: "icons/icon32.png",
+      48: "icons/icon48.png",
+    },
     default_popup: "src/popup/index.html",
   },
 });
