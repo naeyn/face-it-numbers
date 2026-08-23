@@ -54,6 +54,52 @@ export type HistoryGame = {
   at: number;
 };
 
+export type RoleStats = {
+  rounds: number | null;
+  entryCount: number | null;
+  entryWins: number | null;
+  sniperKills: number | null;
+  utilityDamage: number | null;
+  enemiesFlashed: number | null;
+  flashSuccesses: number | null;
+  oneV1Wins: number | null;
+  oneV1Count: number | null;
+  oneV2Wins: number | null;
+  oneV2Count: number | null;
+  tripleKills: number | null;
+  quadroKills: number | null;
+  pentaKills: number | null;
+  mvps: number | null;
+  pistolKills: number | null;
+  knifeKills: number | null;
+  zeusKills: number | null;
+  headshots: number | null;
+  headshotPct: number | null;
+};
+
+export type RoleLabelKey =
+  | "humiliation"
+  | "clutcher"
+  | "highlight"
+  | "opener"
+  | "awper"
+  | "onetapper"
+  | "closer"
+  | "spacetaker"
+  | "utilityking"
+  | "pistoldemon"
+  | "damagedealer"
+  | "support";
+
+export type RoleLabel = {
+  playerId: string;
+  nickname: string;
+  key: RoleLabelKey;
+  text: string;
+  tone: "good" | "bad" | "info";
+  detail: string;
+};
+
 export type GameLabelKey =
   | "lifegame"
   | "brick"
@@ -141,6 +187,7 @@ export type LobbyStats = {
   maps: MapEntity[];
   captainDrops: DropRate[];
   labels: GameLabel[];
+  roles: RoleLabel[];
   historyGames: Array<{ playerId: string; nickname: string; games: HistoryGame[] }>;
   youWon: boolean | null;
   matchAt?: number;

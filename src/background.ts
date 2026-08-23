@@ -8,6 +8,7 @@ import {
 } from "./lib/aggregate";
 import { fetchCaptainDrops } from "./lib/captain-drops";
 import { assignGameLabels, priorGames, sameMatchId } from "./lib/game-labels";
+import { assignRoleLabels } from "./lib/role-labels";
 import { fetchThisGame, isMatchFinished } from "./lib/match-stats";
 import {
   CACHE_TTL_MS,
@@ -148,6 +149,7 @@ async function getLobbyStats(
   const themAgg = aggregateTeamMaps(themRoster, statsByPlayer, KNOWN_MAPS, dropped, picked);
 
   let labels: LobbyStats["labels"] = [];
+  let roles: LobbyStats["roles"] = [];
   let youWon: boolean | null = null;
   const historyGames = roster.map((player) => ({
     playerId: player.player_id,
@@ -181,6 +183,11 @@ async function getLobbyStats(
         labelHistories,
         asOf,
       );
+      // Role pendants only on finished matches — partial mid-game counts
+      // would mislabel against thresholds tuned for full matches.
+      if (isMatchFinished(match.status ?? "")) {
+        roles = assignRoleLabels(lines);
+      }
       const youIds = new Set(youRoster.map((player) => player.player_id));
       const yours = lines.filter((line) => youIds.has(line.playerId));
       if (yours.length >= 3) {
@@ -188,6 +195,7 @@ async function getLobbyStats(
       }
     } catch {
       labels = [];
+      roles = [];
     }
   }
 
@@ -219,6 +227,7 @@ async function getLobbyStats(
     maps: pool,
     captainDrops,
     labels,
+    roles,
     historyGames,
     youWon,
     matchAt,

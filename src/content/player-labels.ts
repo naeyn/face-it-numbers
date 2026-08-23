@@ -1,9 +1,18 @@
-import type { GameLabel, GameLabelKey, LobbyStats, PlayerHistory } from "../lib/types";
+import type {
+  GameLabel,
+  GameLabelKey,
+  LobbyStats,
+  PlayerHistory,
+  RoleLabel,
+  RoleLabelKey,
+} from "../lib/types";
 import { loadSettings } from "../lib/settings";
 import { assignGameLabels } from "../lib/game-labels";
+import { BANTER_ROLE_KEYS } from "../lib/role-labels";
 import type { ThisGameLine } from "../lib/match-stats";
 
 const ATTR = "data-fin-label";
+const ROLE_ATTR = "data-fin-role";
 const STYLE_ID = "faceit-numbers-player-labels";
 
 const LABEL_CSS = `
@@ -53,6 +62,7 @@ const LABEL_CSS = `
 .fin-player-label.bad { background: #4a2a1f !important; color: #f0b090 !important; }
 .fin-player-label.cold { background: #4a1f1f !important; color: #ff9a9a !important; }
 .fin-player-label.info { background: #2a3344 !important; color: #9ec1ff !important; }
+.fin-player-label.role { box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -95,6 +105,41 @@ const LABEL_HINTS: Record<GameLabelKey, string> = {
   tourist: "Extreme game on a map they barely play",
 };
 
+const ROLE_HINTS: Record<RoleLabelKey, string> = {
+  humiliation: "Knife or Zeus kills — the classic announcer award",
+  clutcher: "Won multiple 1vX clutches this match",
+  highlight: "Multi-kill rounds worth rewatching",
+  opener: "Most opening duels in the lobby, and won them",
+  awper: "Most sniper kills in the lobby",
+  onetapper: "Highest headshot rate in the lobby",
+  closer: "Most MVPs plus a clutch — finishes rounds",
+  spacetaker: "Most opening attempts — takes space for the team",
+  utilityking: "Most utility damage in the lobby",
+  pistoldemon: "Big share of kills with pistols",
+  damagedealer: "Top damage without top kills",
+  support: "Highest assist ratio in the lobby",
+};
+
+const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
+  humiliation: "M2 13.5 11.5 4l2.5-2.5.5 3L5 14l-3 .5z",
+  clutcher: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8-3-1-5-3.7-5-6.8V3.5z",
+  highlight: "M8 1l1.8 5.2L15 8l-5.2 1.8L8 15l-1.8-5.2L1 8l5.2-1.8z",
+  opener: "M9 2h5v12H9v-1.5h3.5v-9H9zM1.8 8l4.7-3.5v2.3H9v2.4H6.5v2.3z",
+  awper:
+    "M8 1.2a6.8 6.8 0 1 1 0 13.6A6.8 6.8 0 0 1 8 1.2zm0 2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6zm0 3.4a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z",
+  onetapper:
+    "M7.4 1h1.2v3H7.4zM7.4 12h1.2v3H7.4zM1 7.4h3v1.2H1zM12 7.4h3v1.2h-3zM8 5.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z",
+  closer: "M3 1.5h1.5V15H3zM4.5 2h9l-2.2 3 2.2 3h-9z",
+  spacetaker:
+    "M1.5 1.5h5v2H3.9l3 3-1.4 1.4-3-3v2.6h-2zM14.5 14.5h-5v-2h2.6l-3-3 1.4-1.4 3 3V8.5h2z",
+  utilityking: "M6.5 1h3v2h-3zM8 3.6a4.9 4.9 0 1 1 0 9.8 4.9 4.9 0 0 1 0-9.8z",
+  pistoldemon:
+    "M1.5 4h13v3.2H9.2l-.6 2.4c-.2.8-.7 1.2-1.5 1.2H4.6l1-3.6H3.2L1.5 5.4z",
+  damagedealer:
+    "M8 1.2 9.6 5l3.9-1.7-2.3 3.5 3.6 1.9-4 .6.9 4-3.7-2.2L4.3 13l.9-4-4-.6L4.8 6.5 2.5 3.3 6.4 5z",
+  support: "M7 3h2v4h4v2H9v4H7V9H3V7h4z",
+};
+
 const ICON_PATHS: Record<GameLabelKey, string> = {
   lifegame: "M8 1.3 9.8 5.6l4.7.4-3.5 3.1 1.1 4.6L8 11.4 3.9 13.7l1.1-4.6L1.5 6l4.7-.4z",
   brick: "M1 2.5h6.4v4.2H1zm7.6 0H15v4.2H8.6zM1 8.3h4.2V13H1zm5.8 0H15V13H6.8z",
@@ -118,23 +163,65 @@ function ensureStyle(): void {
   style.textContent = LABEL_CSS;
 }
 
+// One badge shape for both families (performance labels + role pendants) so
+// tooltip, icon, and row-finding logic stay shared.
+type Badge = {
+  playerId: string;
+  nickname: string;
+  text: string;
+  tone: string;
+  hint: string;
+  detail: string;
+  iconPath: string;
+  attr: string;
+  extraClass: string;
+};
+
+function badgeFromLabel(label: GameLabel): Badge {
+  return {
+    playerId: label.playerId,
+    nickname: label.nickname,
+    text: label.text,
+    tone: label.tone,
+    hint: LABEL_HINTS[label.key],
+    detail: label.detail,
+    iconPath: ICON_PATHS[label.key],
+    attr: ATTR,
+    extraClass: "",
+  };
+}
+
+function badgeFromRole(role: RoleLabel): Badge {
+  return {
+    playerId: role.playerId,
+    nickname: role.nickname,
+    text: role.text,
+    tone: role.tone,
+    hint: ROLE_HINTS[role.key],
+    detail: role.detail,
+    iconPath: ROLE_ICON_PATHS[role.key],
+    attr: ROLE_ATTR,
+    extraClass: " role",
+  };
+}
+
 function hideTip(): void {
   document.getElementById(TIP_ID)?.remove();
 }
 
-function showTip(anchor: HTMLElement, label: GameLabel): void {
+function showTip(anchor: HTMLElement, badge: Badge): void {
   hideTip();
   const tip = document.createElement("div");
   tip.id = TIP_ID;
   const name = document.createElement("div");
   name.className = "fin-tip-name";
-  name.textContent = label.text;
+  name.textContent = badge.text;
   const hint = document.createElement("div");
   hint.className = "fin-tip-hint";
-  hint.textContent = LABEL_HINTS[label.key];
+  hint.textContent = badge.hint;
   const detail = document.createElement("div");
   detail.className = "fin-tip-detail";
-  detail.textContent = label.detail;
+  detail.textContent = badge.detail;
   tip.append(name, hint, detail);
   document.documentElement.append(tip);
   const rect = anchor.getBoundingClientRect();
@@ -181,33 +268,33 @@ function* deepElements(root: ParentNode): Generator<Element> {
   }
 }
 
-function iconFor(key: GameLabelKey): SVGSVGElement {
+function iconFor(path: string): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", ICON_PATHS[key]);
-  svg.append(path);
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("d", path);
+  svg.append(el);
   return svg;
 }
 
-function badgeFor(label: GameLabel, compact: boolean): HTMLSpanElement {
+function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
   const span = document.createElement("span");
-  span.className = `fin-player-label ${label.tone}${compact ? " compact" : ""}`;
-  span.setAttribute(ATTR, label.playerId);
-  span.setAttribute("data-fin-sig", `${label.key}:${label.detail}`);
-  span.setAttribute("aria-label", `${label.text}. ${LABEL_HINTS[label.key]}. ${label.detail}`);
-  span.addEventListener("mouseenter", () => showTip(span, label));
+  span.className = `fin-player-label ${badge.tone}${badge.extraClass}${compact ? " compact" : ""}`;
+  span.setAttribute(badge.attr, badge.playerId);
+  span.setAttribute("data-fin-sig", `${badge.text}:${badge.detail}`);
+  span.setAttribute("aria-label", `${badge.text}. ${badge.hint}. ${badge.detail}`);
+  span.addEventListener("mouseenter", () => showTip(span, badge));
   span.addEventListener("mouseleave", hideTip);
-  if (compact) span.append(iconFor(label.key));
-  else span.textContent = label.text;
+  if (compact) span.append(iconFor(badge.iconPath));
+  else span.textContent = badge.text;
   return span;
 }
 
-function alreadyLabeled(node: Element, playerId: string): boolean {
+function alreadyLabeled(node: Element, badge: Badge): boolean {
   const parent = node.parentElement;
-  if (parent?.querySelector(`[${ATTR}="${playerId}"]`)) return true;
-  if (node.nextElementSibling?.getAttribute(ATTR) === playerId) return true;
+  if (parent?.querySelector(`[${badge.attr}="${badge.playerId}"]`)) return true;
+  if (node.nextElementSibling?.getAttribute(badge.attr) === badge.playerId) return true;
   return false;
 }
 
@@ -235,9 +322,15 @@ function markInlineHost(node: Element): void {
   host.classList.add("fin-label-host");
 }
 
-function attachBadge(node: Element, label: GameLabel, compact: boolean): void {
-  if (alreadyLabeled(node, label.playerId)) return;
-  node.after(badgeFor(label, compact));
+function attachBadge(node: Element, badge: Badge, compact: boolean): void {
+  if (alreadyLabeled(node, badge)) return;
+  // Role pendants sit after the performance label when one is present.
+  const sibling = node.nextElementSibling;
+  const anchor =
+    badge.attr === ROLE_ATTR && sibling?.getAttribute(ATTR) === badge.playerId
+      ? sibling
+      : node;
+  anchor.after(badgeFor(badge, compact));
   if (compact) markInlineHost(node);
 }
 
@@ -299,23 +392,23 @@ function innermostName(row: Element, nickname: string): Element | undefined {
   return ownBest ?? textBest;
 }
 
-function injectOne(label: GameLabel, allNicks: string[]): void {
+function injectOne(badge: Badge, allNicks: string[]): void {
   const starts: Element[] = [];
   for (const el of deepElements(document)) {
     if (inSiteChrome(el)) continue;
-    if (nameMatches(el, label.nickname)) starts.push(el);
+    if (nameMatches(el, badge.nickname)) starts.push(el);
   }
   const seen = new Set<Element>();
   for (const start of starts) {
-    const row = findRow(start, label.nickname, allNicks);
+    const row = findRow(start, badge.nickname, allNicks);
     if (seen.has(row)) continue;
     seen.add(row);
     const compact = isCompactRow(row);
     const name =
       (compact
-        ? scoreboardName(row, label.nickname)
-        : innermostName(row, label.nickname)) ?? start;
-    attachBadge(name, label, compact);
+        ? scoreboardName(row, badge.nickname)
+        : innermostName(row, badge.nickname)) ?? start;
+    attachBadge(name, badge, compact);
   }
 }
 
@@ -406,21 +499,28 @@ function labelsFromPage(stats: LobbyStats): GameLabel[] {
 
 export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   const settings = await loadSettings();
-  if (!settings.gameLabels) {
+  const badges: Badge[] = [];
+  if (settings.gameLabels) {
+    badges.push(...labelsFromPage(stats).map(badgeFromLabel));
+  }
+  if (settings.roleLabels) {
+    const roles = (stats.roles ?? []).filter(
+      (role) => settings.banterLabels || !BANTER_ROLE_KEYS.has(role.key),
+    );
+    badges.push(...roles.map(badgeFromRole));
+  }
+  if (badges.length === 0) {
     clearPlayerLabels();
     return;
   }
-  const labels = labelsFromPage(stats);
-  if (labels.length === 0) {
-    clearPlayerLabels();
-    return;
-  }
-  const existing = document.querySelectorAll(`[${ATTR}]`);
-  const wanted = labels.map((label) => `${label.playerId}:${label.key}:${label.detail}`);
-  const seen = [...existing].map(
-    (node) =>
-      `${node.getAttribute(ATTR) ?? ""}:${node.getAttribute("data-fin-sig") ?? ""}`,
+  const existing = document.querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`);
+  const wanted = badges.map(
+    (badge) => `${badge.attr}:${badge.playerId}:${badge.text}:${badge.detail}`,
   );
+  const seen = [...existing].map((node) => {
+    const attr = node.hasAttribute(ATTR) ? ATTR : ROLE_ATTR;
+    return `${attr}:${node.getAttribute(attr) ?? ""}:${node.getAttribute("data-fin-sig") ?? ""}`;
+  });
   if (
     existing.length === wanted.length &&
     wanted.every((item) => seen.includes(item))
@@ -430,12 +530,15 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   ensureStyle();
   clearPlayerLabels();
   const allNicks = rosterNicks(stats);
-  for (const label of labels) injectOne(label, allNicks);
+  // Performance labels first: role pendants anchor after them in the row.
+  for (const badge of badges) injectOne(badge, allNicks);
 }
 
 export function clearPlayerLabels(): void {
   hideTip();
-  document.querySelectorAll(`[${ATTR}]`).forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`)
+    .forEach((node) => node.remove());
   document.querySelectorAll(".fin-label-host").forEach((node) => {
     node.classList.remove("fin-label-host");
   });

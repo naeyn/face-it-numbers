@@ -21,6 +21,8 @@ export type FeatureKey =
   | "mapKd"
   | "outlier"
   | "gameLabels"
+  | "roleLabels"
+  | "banterLabels"
   | "preBrief"
   | "smartPick";
 
@@ -42,6 +44,8 @@ export const DEFAULT_SETTINGS: FeatureSettings = {
   mapKd: true,
   outlier: true,
   gameLabels: true,
+  roleLabels: true,
+  banterLabels: true,
   preBrief: true,
   smartPick: true,
   youColor: DEFAULT_YOU_COLOR,
@@ -95,6 +99,16 @@ export const FEATURE_GROUPS: {
         key: "gameLabels",
         label: "Performance labels",
         hint: "Lifegame, Brick, Carry… vs that player’s last 30",
+      },
+      {
+        key: "roleLabels",
+        label: "Role pendants",
+        hint: "Opener, AWPer, Clutcher… what job each player did this match",
+      },
+      {
+        key: "banterLabels",
+        label: "Banter labels",
+        hint: "Allow the unflattering role pendants (needs Role pendants on)",
       },
     ],
   },
