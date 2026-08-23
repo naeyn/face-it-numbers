@@ -71,10 +71,10 @@ const LABEL_CSS = `
 }
 .fin-player-label.role.compact { border-radius: 999px !important; }
 .fin-player-label.role:not(.compact) svg {
-  width: 11px;
-  height: 11px;
+  width: 15px;
+  height: 15px;
   margin-right: 5px;
-  flex: 0 0 11px;
+  flex: 0 0 15px;
   fill: currentColor;
   pointer-events: none;
 }
