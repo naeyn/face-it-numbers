@@ -207,9 +207,13 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
           "i20",
         );
         if (merged.size === 0) {
-          // Phase-0 verification: surface the raw key set once per parse so a
-          // live finished match confirms the advanced-stat field spellings.
-          console.info("[fin] player_stats keys", Object.keys(stats).sort());
+          // Phase-0 verification: surface one player's raw stats per parse so
+          // a live finished match confirms field spellings AND value ranges.
+          console.info(
+            "[fin] player_stats sample",
+            nickname,
+            JSON.stringify(stats),
+          );
         }
         const roleStats = parseRoleStats(stats);
         roleStats.rounds = roundCount;
