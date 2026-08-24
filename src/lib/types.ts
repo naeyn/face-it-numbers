@@ -6,6 +6,7 @@ export type RosterPlayer = {
   avatar?: string;
   game_skill_level?: number;
   elo?: number;
+  steam64?: string;
 };
 
 export type MapEntity = {
@@ -52,6 +53,67 @@ export type HistoryGame = {
   kr: number | null;
   won: boolean;
   at: number;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  rounds: number | null;
+  mvps: number | null;
+  tripleKills: number | null;
+  quadroKills: number | null;
+  pentaKills: number | null;
+};
+
+export type RoleStats = {
+  rounds: number | null;
+  entryCount: number | null;
+  entryWins: number | null;
+  sniperKills: number | null;
+  utilityDamage: number | null;
+  enemiesFlashed: number | null;
+  flashSuccesses: number | null;
+  oneV1Wins: number | null;
+  oneV1Count: number | null;
+  oneV2Wins: number | null;
+  oneV2Count: number | null;
+  tripleKills: number | null;
+  quadroKills: number | null;
+  pentaKills: number | null;
+  mvps: number | null;
+  pistolKills: number | null;
+  knifeKills: number | null;
+  zeusKills: number | null;
+  headshots: number | null;
+  headshotPct: number | null;
+};
+
+export type RoleLabelKey =
+  | "humiliation"
+  | "clutcher"
+  | "highlight"
+  | "opener"
+  | "awper"
+  | "onetapper"
+  | "closer"
+  | "spacetaker"
+  | "utilityking"
+  | "pistoldemon"
+  | "damagedealer"
+  | "support"
+  | "trader"
+  | "flashsupport"
+  | "crosshair"
+  | "spray"
+  | "reflexes"
+  | "sided";
+
+export type RoleLabel = {
+  playerId: string;
+  nickname: string;
+  key: RoleLabelKey;
+  text: string;
+  tone: "good" | "bad" | "info";
+  detail: string;
+  source: "history" | "leetify";
 };
 
 export type GameLabelKey =
@@ -141,6 +203,7 @@ export type LobbyStats = {
   maps: MapEntity[];
   captainDrops: DropRate[];
   labels: GameLabel[];
+  roles: RoleLabel[];
   historyGames: Array<{ playerId: string; nickname: string; games: HistoryGame[] }>;
   youWon: boolean | null;
   matchAt?: number;

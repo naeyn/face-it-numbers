@@ -21,6 +21,7 @@ export default defineManifest({
   host_permissions: [
     "https://www.faceit.com/*",
     "https://api.faceit.com/*",
+    "https://api-public.cs-prod.leetify.com/*",
   ],
   background: {
     service_worker: "src/background.ts",

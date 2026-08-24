@@ -1,10 +1,24 @@
-import type { GameLabel, GameLabelKey, LobbyStats, PlayerHistory } from "../lib/types";
+import type {
+  GameLabel,
+  GameLabelKey,
+  LobbyStats,
+  PlayerHistory,
+  RoleLabel,
+  RoleLabelKey,
+} from "../lib/types";
 import { loadSettings } from "../lib/settings";
 import { assignGameLabels } from "../lib/game-labels";
+import { BANTER_ROLE_KEYS } from "../lib/role-labels";
 import type { ThisGameLine } from "../lib/match-stats";
 
 const ATTR = "data-fin-label";
+const ROLE_ATTR = "data-fin-role";
+const STRIP_ATTR = "data-fin-role-strip";
 const STYLE_ID = "faceit-numbers-player-labels";
+// Bump on ANY badge rendering change (CSS, icons, structure): the repaint
+// dedup compares signatures against badges already in the DOM, which survive
+// extension updates — without a version, stale badges are never redrawn.
+const RENDER_VERSION = "v24";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -53,6 +67,69 @@ const LABEL_CSS = `
 .fin-player-label.bad { background: #4a2a1f !important; color: #f0b090 !important; }
 .fin-player-label.cold { background: #4a1f1f !important; color: #ff9a9a !important; }
 .fin-player-label.info { background: #2a3344 !important; color: #9ec1ff !important; }
+/* Badge language: FORM labels = filled squares (above); ROLE pendants =
+   outlined pills with an always-visible icon; pre-game brief tags in the
+   overlay = dashed outlines. */
+.fin-player-label.role {
+  border-radius: 999px !important;
+  padding: 2px 9px !important;
+}
+.fin-player-label.role.compact { border-radius: 999px !important; }
+.fin-player-label.role.compact svg { width: 16px; height: 16px; }
+.fin-player-label.role:not(.compact) svg {
+  width: 15px;
+  height: 15px;
+  margin-right: 5px;
+  flex: 0 0 15px;
+  fill: currentColor;
+  pointer-events: none;
+}
+.fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
+.fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
+.fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
+/* Career (Leetify-sourced) pendants: Leetify brand gradient ring
+   (their --primary #f84982 to --purple #6f42c1) */
+.fin-player-label.role.career {
+  box-sizing: border-box;
+  border: 2px solid transparent !important;
+  background:
+    linear-gradient(#17171b, #17171b) padding-box,
+    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
+  box-shadow: none !important;
+}
+/* Role pendant as an avatar corner badge, like Faceit's own avatar badges */
+.fin-avatar-badge-host { position: relative !important; }
+.fin-player-label.role.avatar-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 0 0 28px !important;
+  justify-content: center;
+  border-radius: 999px !important;
+  background: #17171b !important;
+  z-index: 12;
+  overflow: visible !important;
+}
+.fin-player-label.role.avatar-badge svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+  fill: currentColor;
+  pointer-events: none;
+}
+/* Must outrank .avatar-badge's solid background (same importance, later rule) */
+.fin-player-label.role.avatar-badge.career {
+  box-sizing: border-box;
+  border: 2px solid transparent !important;
+  background:
+    linear-gradient(#17171b, #17171b) padding-box,
+    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
+  box-shadow: none !important;
+}
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -78,6 +155,13 @@ const LABEL_CSS = `
   margin-top: 5px;
   font-size: 11px;
 }
+#fin-label-tip .fin-tip-scope {
+  color: #78859a;
+  margin-top: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 `;
 
 const TIP_ID = "fin-label-tip";
@@ -93,6 +177,57 @@ const LABEL_HINTS: Record<GameLabelKey, string> = {
   offgame: "Clearly below their recent average",
   merchant: "Strong game on a map they usually play well",
   tourist: "Extreme game on a map they barely play",
+};
+
+const ROLE_HINTS: Record<RoleLabelKey, string> = {
+  humiliation: "Got knife or Zeus kills — the classic announcer award",
+  clutcher: "Won multiple 1-versus-X clutch rounds",
+  highlight: "Racks up multi-kill rounds game after game",
+  opener: "Entry fragger: took the round's first duel most often, and won them",
+  awper: "The lobby's sniper: biggest share of kills with a sniper rifle",
+  onetapper: "Cleanest aim in the lobby: highest headshot rate in recent games",
+  closer: "Finishes rounds: earns the most MVP stars in recent games",
+  spacetaker:
+    "Took the round's first duel most often, even when losing it — creates space",
+  utilityking: "Dealt the most grenade damage in the lobby",
+  pistoldemon: "Got a big share of their kills with pistols",
+  damagedealer: "Consistently top damage output without the top K/D",
+  support: "Sets up teammates more than they frag themselves",
+  trader: "Reliably trades fallen teammates — career data via Leetify",
+  flashsupport: "Their flashbangs actually blind people — career data via Leetify",
+  crosshair: "Best crosshair placement among Leetify-tracked players here",
+  spray: "Best spray control among Leetify-tracked players here",
+  reflexes: "Fastest reaction time among Leetify-tracked players here",
+  sided: "Performs much better on one side of the map — via Leetify",
+};
+
+const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
+  humiliation: "M2 13.5 11.5 4l2.5-2.5.5 3L5 14l-3 .5z",
+  clutcher: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8-3-1-5-3.7-5-6.8V3.5z",
+  highlight: "M8 1l1.8 5.2L15 8l-5.2 1.8L8 15l-1.8-5.2L1 8l5.2-1.8z",
+  opener: "M1.5 5.8h7.3V2.4L14.8 8l-6 5.6V10.2H1.5z",
+  awper:
+    "M7.35.2h1.3v3h-1.3zM7.35 12.8h1.3v3h-1.3zM.2 7.35h3v1.3h-3zM12.8 7.35h3v1.3h-3zM8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6zm0 2.1a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6zm0 1.7a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z",
+  onetapper:
+    "M8 1.6a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2zM2 14.8c0-3.3 2.7-5.1 6-5.1s6 1.8 6 5.1zM8 3.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z",
+  closer: "M2.6 1h2V15h-2zM4.6 1.8h9.6l-2.6 3.4 2.6 3.4H4.6z",
+  spacetaker:
+    "M1 1h6.2L4.9 3.3l3.2 3.2-1.6 1.6-3.2-3.2L1 7.2zM15 15H8.8l2.3-2.3-3.2-3.2 1.6-1.6 3.2 3.2L15 8.8z",
+  utilityking: "M5.8.6h4.4v2.5H5.8zM8 3.2a5.7 5.7 0 1 1 0 11.4A5.7 5.7 0 0 1 8 3.2z",
+  pistoldemon:
+    "M1.5 4h13v3.2H9.2l-.6 2.4c-.2.8-.7 1.2-1.5 1.2H4.6l1-3.6H3.2L1.5 5.4z",
+  damagedealer:
+    "M8 1.2 9.6 5l3.9-1.7-2.3 3.5 3.6 1.9-4 .6.9 4-3.7-2.2L4.3 13l.9-4-4-.6L4.8 6.5 2.5 3.3 6.4 5z",
+  support: "M7 3h2v4h4v2H9v4H7V9H3V7h4z",
+  trader: "M2 4.2h8V1.8L14.6 6 10 10.2V7.8H2zM14 11.8H6v2.4L1.4 10 6 5.8v2.4h8z",
+  flashsupport:
+    "M8 5.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6zM7.4 0h1.2v3.2H7.4zM7.4 12.8h1.2V16H7.4zM0 7.4h3.2v1.2H0zM12.8 7.4H16v1.2h-3.2zM2.2 3.1l.9-.9 2.2 2.2-.9.9zM10.7 11.6l.9-.9 2.2 2.2-.9.9zM13 2.2l.9.9-2.2 2.2-.9-.9zM4.4 10.7l.9.9-2.2 2.2-.9-.9z",
+  crosshair:
+    "M7.4 1h1.2v3H7.4zM7.4 12h1.2v3H7.4zM1 7.4h3v1.2H1zM12 7.4h3v1.2h-3zM8 5.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z",
+  spray:
+    "M3 3.2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM13 9.8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5.5 11a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM10.5 2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z",
+  reflexes: "M9.2 1.2 3.8 8.6h3.7l-.9 6.2 6.2-8.6H9.1l1.1-5z",
+  sided: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8V1.5z",
 };
 
 const ICON_PATHS: Record<GameLabelKey, string> = {
@@ -118,24 +253,75 @@ function ensureStyle(): void {
   style.textContent = LABEL_CSS;
 }
 
+// One badge shape for both families (performance labels + role pendants) so
+// tooltip, icon, and row-finding logic stay shared.
+type Badge = {
+  playerId: string;
+  nickname: string;
+  text: string;
+  tone: string;
+  hint: string;
+  detail: string;
+  scope: string;
+  iconPath: string;
+  attr: string;
+  extraClass: string;
+};
+
+function badgeFromLabel(label: GameLabel): Badge {
+  return {
+    playerId: label.playerId,
+    nickname: label.nickname,
+    text: label.text,
+    tone: label.tone,
+    hint: LABEL_HINTS[label.key],
+    detail: label.detail,
+    scope: "Form · this game vs their previous 30 games",
+    iconPath: ICON_PATHS[label.key],
+    attr: ATTR,
+    extraClass: "",
+  };
+}
+
+function badgeFromRole(role: RoleLabel): Badge {
+  const career = role.source === "leetify";
+  return {
+    playerId: role.playerId,
+    nickname: role.nickname,
+    text: role.text,
+    tone: role.tone,
+    hint: ROLE_HINTS[role.key],
+    detail: role.detail,
+    scope: career
+      ? "Role · career data provided by Leetify"
+      : "Role · tendency from their recent matches, vs this lobby",
+    iconPath: ROLE_ICON_PATHS[role.key],
+    attr: ROLE_ATTR,
+    extraClass: career ? " role career" : " role",
+  };
+}
+
 function hideTip(): void {
   document.getElementById(TIP_ID)?.remove();
 }
 
-function showTip(anchor: HTMLElement, label: GameLabel): void {
+function showTip(anchor: HTMLElement, badge: Badge): void {
   hideTip();
   const tip = document.createElement("div");
   tip.id = TIP_ID;
   const name = document.createElement("div");
   name.className = "fin-tip-name";
-  name.textContent = label.text;
+  name.textContent = badge.text;
   const hint = document.createElement("div");
   hint.className = "fin-tip-hint";
-  hint.textContent = LABEL_HINTS[label.key];
+  hint.textContent = badge.hint;
   const detail = document.createElement("div");
   detail.className = "fin-tip-detail";
-  detail.textContent = label.detail;
-  tip.append(name, hint, detail);
+  detail.textContent = badge.detail;
+  const scope = document.createElement("div");
+  scope.className = "fin-tip-scope";
+  scope.textContent = badge.scope;
+  tip.append(name, hint, detail, scope);
   document.documentElement.append(tip);
   const rect = anchor.getBoundingClientRect();
   const width = tip.offsetWidth;
@@ -160,11 +346,27 @@ function nickFromHref(href: string): string | undefined {
   }
 }
 
+// closest() cannot cross shadow boundaries — walk up through shadow hosts so
+// content inside our overlay's shadow root is recognized as ours.
+function inOurShadow(el: Element): boolean {
+  let root = el.getRootNode();
+  while (root instanceof ShadowRoot) {
+    const host = root.host;
+    if (host.id === "faceit-numbers-overlay" || host.closest("#faceit-numbers-overlay")) {
+      return true;
+    }
+    root = host.getRootNode();
+  }
+  return false;
+}
+
 function inSiteChrome(el: Element): boolean {
   if (
     el.closest("#faceit-numbers-overlay") ||
     el.closest(".fin-player-label") ||
-    el.closest("#fin-label-tip")
+    el.closest(".fin-role-card-row") ||
+    el.closest("#fin-label-tip") ||
+    inOurShadow(el)
   ) {
     return true;
   }
@@ -181,33 +383,43 @@ function* deepElements(root: ParentNode): Generator<Element> {
   }
 }
 
-function iconFor(key: GameLabelKey): SVGSVGElement {
+function iconFor(path: string): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", ICON_PATHS[key]);
-  svg.append(path);
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("d", path);
+  svg.append(el);
   return svg;
 }
 
-function badgeFor(label: GameLabel, compact: boolean): HTMLSpanElement {
+function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
   const span = document.createElement("span");
-  span.className = `fin-player-label ${label.tone}${compact ? " compact" : ""}`;
-  span.setAttribute(ATTR, label.playerId);
-  span.setAttribute("data-fin-sig", `${label.key}:${label.detail}`);
-  span.setAttribute("aria-label", `${label.text}. ${LABEL_HINTS[label.key]}. ${label.detail}`);
-  span.addEventListener("mouseenter", () => showTip(span, label));
+  span.className = `fin-player-label ${badge.tone}${badge.extraClass}${compact ? " compact" : ""}`;
+  span.setAttribute(badge.attr, badge.playerId);
+  span.setAttribute("data-fin-sig", `${RENDER_VERSION}:${badge.text}:${badge.detail}`);
+  span.setAttribute(
+    "aria-label",
+    `${badge.text}. ${badge.hint}. ${badge.detail}. ${badge.scope}`,
+  );
+  span.addEventListener("mouseenter", () => showTip(span, badge));
   span.addEventListener("mouseleave", hideTip);
-  if (compact) span.append(iconFor(label.key));
-  else span.textContent = label.text;
+  if (compact) {
+    span.append(iconFor(badge.iconPath));
+  } else if (badge.attr === ROLE_ATTR) {
+    // Role pendants always carry their icon — part of the visual language
+    // separating them from the filled form labels.
+    span.append(iconFor(badge.iconPath), document.createTextNode(badge.text));
+  } else {
+    span.textContent = badge.text;
+  }
   return span;
 }
 
-function alreadyLabeled(node: Element, playerId: string): boolean {
+function alreadyLabeled(node: Element, badge: Badge): boolean {
   const parent = node.parentElement;
-  if (parent?.querySelector(`[${ATTR}="${playerId}"]`)) return true;
-  if (node.nextElementSibling?.getAttribute(ATTR) === playerId) return true;
+  if (parent?.querySelector(`[${badge.attr}="${badge.playerId}"]`)) return true;
+  if (node.nextElementSibling?.getAttribute(badge.attr) === badge.playerId) return true;
   return false;
 }
 
@@ -235,11 +447,18 @@ function markInlineHost(node: Element): void {
   host.classList.add("fin-label-host");
 }
 
-function attachBadge(node: Element, label: GameLabel, compact: boolean): void {
-  if (alreadyLabeled(node, label.playerId)) return;
-  node.after(badgeFor(label, compact));
+function attachBadge(node: Element, badge: Badge, compact: boolean): void {
+  if (alreadyLabeled(node, badge)) return;
+  // A role pill sits after the form chip when the player has both.
+  const sibling = node.nextElementSibling;
+  const anchor =
+    badge.attr === ROLE_ATTR && sibling?.getAttribute(ATTR) === badge.playerId
+      ? sibling
+      : node;
+  anchor.after(badgeFor(badge, compact));
   if (compact) markInlineHost(node);
 }
+
 
 function nameMatches(el: Element, nickname: string): boolean {
   const href = el.getAttribute("href") ?? "";
@@ -299,23 +518,135 @@ function innermostName(row: Element, nickname: string): Element | undefined {
   return ownBest ?? textBest;
 }
 
-function injectOne(label: GameLabel, allNicks: string[]): void {
+function injectOne(badge: Badge, allNicks: string[]): void {
   const starts: Element[] = [];
   for (const el of deepElements(document)) {
     if (inSiteChrome(el)) continue;
-    if (nameMatches(el, label.nickname)) starts.push(el);
+    if (nameMatches(el, badge.nickname)) starts.push(el);
   }
   const seen = new Set<Element>();
   for (const start of starts) {
-    const row = findRow(start, label.nickname, allNicks);
+    const row = findRow(start, badge.nickname, allNicks);
     if (seen.has(row)) continue;
     seen.add(row);
     const compact = isCompactRow(row);
     const name =
       (compact
-        ? scoreboardName(row, label.nickname)
-        : innermostName(row, label.nickname)) ?? start;
-    attachBadge(name, label, compact);
+        ? scoreboardName(row, badge.nickname)
+        : innermostName(row, badge.nickname)) ?? start;
+    attachBadge(name, badge, compact);
+  }
+}
+
+// ---- Role avatar badges: the pendant overlays the top-right corner of the
+// player's avatar on the big cards, like Faceit's own avatar badges.
+
+const BADGE_SIZE = 28;
+const BADGE_OVERHANG = 6;
+
+// Largest square-ish visual in the card is the avatar artwork — the only
+// element that has proven to measure reliably in Faceit's DOM. (The
+// styles__PlayerCard div is an empty zero-size decorative layer.)
+function findAvatar(card: Element): Element | undefined {
+  let best: Element | undefined;
+  let bestArea = 0;
+  for (const el of deepElements(card)) {
+    let visual =
+      el.tagName === "IMG" || el.tagName === "CANVAS" || el.tagName === "VIDEO";
+    if (!visual && el instanceof HTMLElement) {
+      const bg = getComputedStyle(el).backgroundImage;
+      visual = !!bg && bg !== "none";
+    }
+    if (!visual) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 40) continue;
+    if (rect.width > 240 || rect.height > 320) continue; // banners, map art
+    const area = rect.width * rect.height;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+// Absolute positioning resolves against whatever containing block the DOM
+// gives us (styled-components wrappers may be display:contents or have
+// transforms), so don't trust CSS offsets: measure the target's rendered
+// rect against the badge's actual offsetParent and pin in pixels.
+function pinToCorner(span: HTMLElement, target: Element): void {
+  const op = span.offsetParent;
+  if (!(op instanceof HTMLElement)) return; // keep CSS defaults
+  const targetRect = target.getBoundingClientRect();
+  const opRect = op.getBoundingClientRect();
+  if (targetRect.width === 0 || opRect.width === 0) return;
+  span.style.top = `${Math.round(targetRect.top - opRect.top) - BADGE_OVERHANG}px`;
+  span.style.left = `${Math.round(targetRect.right - opRect.left) - BADGE_SIZE + BADGE_OVERHANG}px`;
+  span.style.right = "auto";
+}
+
+// The visible avatar frame: nearest ancestor that actually PAINTS a box
+// (background color or border-radius) and still contains the artwork —
+// detected by computed style, not DOM structure, because Faceit's wrappers
+// include zero-size and display:contents layers.
+function visibleFrame(avatar: Element, card: Element): Element | undefined {
+  const aRect = avatar.getBoundingClientRect();
+  let current = avatar.parentElement;
+  while (current && current !== card) {
+    const rect = current.getBoundingClientRect();
+    if (rect.width > 260 || rect.height > 340) break; // reached row-scale boxes
+    const style = getComputedStyle(current);
+    const bg = style.backgroundColor;
+    const paintsBg = !!bg && bg !== "transparent" && !bg.replace(/\s/g, "").endsWith(",0)");
+    const rounded = parseFloat(style.borderRadius) > 0;
+    if (
+      (paintsBg || rounded) &&
+      rect.width >= aRect.width - 2 &&
+      rect.height >= aRect.height - 2
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return undefined;
+}
+
+function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
+  const badge = badgeFromRole(role);
+  const seen = new Set<Element>();
+  for (const el of deepElements(document)) {
+    if (inSiteChrome(el)) continue;
+    if (!nameMatches(el, role.nickname)) continue;
+    const card = findRow(el, role.nickname, allNicks);
+    if (seen.has(card)) continue;
+    seen.add(card);
+    if (isCompactRow(card)) continue; // big player cards only
+    if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
+    const avatar = findAvatar(card);
+    // The avatar's own card: the PlayerCardContainer frame. Its visible
+    // outline (which pokes above the player row) is the styles__PlayerCard
+    // overlay INSIDE it — an empty absolutely-positioned layer, so it is a
+    // sibling of the artwork, not an ancestor. Pin to that when it has a
+    // real rect; the container is the fallback.
+    const container = avatar?.closest('[class*="PlayerCardContainer"]');
+    let anchor: Element | undefined =
+      container ?? (avatar ? visibleFrame(avatar, card) ?? avatar : undefined);
+    const frameLayer = container?.querySelector('[class*="PlayerCard-sc"]');
+    if (frameLayer) {
+      const rect = frameLayer.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) anchor = frameLayer;
+    }
+    const host = container instanceof HTMLElement ? container : avatar?.parentElement;
+    if (host && anchor) {
+      host.classList.add("fin-avatar-badge-host");
+      const span = badgeFor(badge, true);
+      span.classList.add("avatar-badge");
+      host.append(span);
+      pinToCorner(span, anchor);
+    } else {
+      const name = innermostName(card, role.nickname);
+      if (name) attachBadge(name, badge, false);
+    }
   }
 }
 
@@ -406,21 +737,28 @@ function labelsFromPage(stats: LobbyStats): GameLabel[] {
 
 export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   const settings = await loadSettings();
-  if (!settings.gameLabels) {
+  const inline: Badge[] = settings.gameLabels
+    ? labelsFromPage(stats).map(badgeFromLabel)
+    : [];
+  const roles: RoleLabel[] = settings.roleLabels
+    ? (stats.roles ?? []).filter(
+        (role) => settings.banterLabels || !BANTER_ROLE_KEYS.has(role.key),
+      )
+    : [];
+  const badges = [...inline, ...roles.map(badgeFromRole)];
+  if (badges.length === 0) {
     clearPlayerLabels();
     return;
   }
-  const labels = labelsFromPage(stats);
-  if (labels.length === 0) {
-    clearPlayerLabels();
-    return;
-  }
-  const existing = document.querySelectorAll(`[${ATTR}]`);
-  const wanted = labels.map((label) => `${label.playerId}:${label.key}:${label.detail}`);
-  const seen = [...existing].map(
-    (node) =>
-      `${node.getAttribute(ATTR) ?? ""}:${node.getAttribute("data-fin-sig") ?? ""}`,
+  const existing = document.querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`);
+  const wanted = badges.map(
+    (badge) =>
+      `${badge.attr}:${badge.playerId}:${RENDER_VERSION}:${badge.text}:${badge.detail}`,
   );
+  const seen = [...existing].map((node) => {
+    const attr = node.hasAttribute(ATTR) ? ATTR : ROLE_ATTR;
+    return `${attr}:${node.getAttribute(attr) ?? ""}:${node.getAttribute("data-fin-sig") ?? ""}`;
+  });
   if (
     existing.length === wanted.length &&
     wanted.every((item) => seen.includes(item))
@@ -430,14 +768,23 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   ensureStyle();
   clearPlayerLabels();
   const allNicks = rosterNicks(stats);
-  for (const label of labels) injectOne(label, allNicks);
+  for (const badge of inline) injectOne(badge, allNicks);
+  for (const role of roles) injectRoleAvatarBadge(role, allNicks);
 }
 
 export function clearPlayerLabels(): void {
   hideTip();
-  document.querySelectorAll(`[${ATTR}]`).forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${ATTR}], [${ROLE_ATTR}], [${STRIP_ATTR}]`)
+    .forEach((node) => node.remove());
   document.querySelectorAll(".fin-label-host").forEach((node) => {
     node.classList.remove("fin-label-host");
+  });
+  document.querySelectorAll(".fin-card-host").forEach((node) => {
+    node.classList.remove("fin-card-host");
+  });
+  document.querySelectorAll(".fin-avatar-badge-host").forEach((node) => {
+    node.classList.remove("fin-avatar-badge-host");
   });
 }
 

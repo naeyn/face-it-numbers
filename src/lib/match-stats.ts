@@ -1,7 +1,7 @@
 import { CACHE_TTL_MS } from "./constants";
 import { FaceitApiError, faceitGet } from "./faceit-api";
 import { normalizeMapKey } from "./maps";
-import type { MapEntity } from "./types";
+import type { MapEntity, RoleStats } from "./types";
 
 export type ThisGameLine = {
   playerId: string;
@@ -14,6 +14,7 @@ export type ThisGameLine = {
   adr: number | null;
   won: boolean;
   mapKey: string;
+  roleStats?: RoleStats;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -53,6 +54,75 @@ function pickNum(stats: Record<string, unknown>, ...keys: string[]): number | nu
     }
   }
   return null;
+}
+
+function addNullable(a: number | null, b: number | null): number | null {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a + b;
+}
+
+// Compact-key mapping for /stats/v1/stats/matches, VERIFIED empirically on
+// 2026-08-23 by cross-referencing two live payloads (13 player rows) against
+// Leetify named stats for the same match plus arithmetic invariants (entry
+// wins sum to the round count, c-keys are per-round/ratio forms of i-keys).
+// See docs/role-pendants-spec.md for the full dictionary and proofs.
+// Named aliases are kept in case other endpoint shapes use them.
+// Pistol/knife/zeus have no verified compact key yet — named-only, so the
+// roles that need them stay dormant rather than misfire.
+function parseRoleStats(stats: Record<string, unknown>): RoleStats {
+  return {
+    rounds: null,
+    entryCount: pickNum(stats, "Entry Count", "i21"),
+    entryWins: pickNum(stats, "Entry Wins", "i22"),
+    sniperKills: pickNum(stats, "Sniper Kills", "i39"),
+    utilityDamage: pickNum(stats, "Utility Damage", "i30"),
+    enemiesFlashed: pickNum(stats, "Enemies Flashed", "i27"),
+    flashSuccesses: pickNum(stats, "Flash Successes", "i29"),
+    oneV1Count: pickNum(stats, "1v1Count", "i23"),
+    oneV1Wins: pickNum(stats, "1v1Wins", "i24"),
+    oneV2Count: pickNum(stats, "1v2Count", "i25"),
+    oneV2Wins: pickNum(stats, "1v2Wins", "i26"),
+    tripleKills: pickNum(stats, "Triple Kills", "i14"),
+    quadroKills: pickNum(stats, "Quadro Kills", "i15"),
+    pentaKills: pickNum(stats, "Penta Kills", "i16"),
+    mvps: pickNum(stats, "MVPs", "i9"),
+    pistolKills: pickNum(stats, "Pistol Kills"),
+    knifeKills: pickNum(stats, "Knife Kills"),
+    zeusKills: pickNum(stats, "Zeus Kills"),
+    headshots: pickNum(stats, "Headshots", "i13"),
+    headshotPct: pickNum(stats, "Headshots %", "c4"),
+  };
+}
+
+function mergeRoleStats(a: RoleStats, b: RoleStats): RoleStats {
+  return {
+    rounds: addNullable(a.rounds, b.rounds),
+    entryCount: addNullable(a.entryCount, b.entryCount),
+    entryWins: addNullable(a.entryWins, b.entryWins),
+    sniperKills: addNullable(a.sniperKills, b.sniperKills),
+    utilityDamage: addNullable(a.utilityDamage, b.utilityDamage),
+    enemiesFlashed: addNullable(a.enemiesFlashed, b.enemiesFlashed),
+    flashSuccesses: addNullable(a.flashSuccesses, b.flashSuccesses),
+    oneV1Wins: addNullable(a.oneV1Wins, b.oneV1Wins),
+    oneV1Count: addNullable(a.oneV1Count, b.oneV1Count),
+    oneV2Wins: addNullable(a.oneV2Wins, b.oneV2Wins),
+    oneV2Count: addNullable(a.oneV2Count, b.oneV2Count),
+    tripleKills: addNullable(a.tripleKills, b.tripleKills),
+    quadroKills: addNullable(a.quadroKills, b.quadroKills),
+    pentaKills: addNullable(a.pentaKills, b.pentaKills),
+    mvps: addNullable(a.mvps, b.mvps),
+    pistolKills: addNullable(a.pistolKills, b.pistolKills),
+    knifeKills: addNullable(a.knifeKills, b.knifeKills),
+    zeusKills: addNullable(a.zeusKills, b.zeusKills),
+    headshots: addNullable(a.headshots, b.headshots),
+    // percentage across maps: recomputed from headshots/kills at assignment
+    // time when counts exist; averaging is the honest fallback
+    headshotPct:
+      a.headshotPct != null && b.headshotPct != null
+        ? (a.headshotPct + b.headshotPct) / 2
+        : (a.headshotPct ?? b.headshotPct),
+  };
 }
 
 function teamWon(
@@ -109,6 +179,7 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
       pool,
     );
     const winner = str(roundStats.Winner ?? roundStats.winner ?? roundRow.winner);
+    const roundCount = pickNum(roundStats, "Rounds", "i18", "rounds");
     const teams = asArray(roundRow.teams);
 
     for (const team of teams) {
@@ -131,13 +202,26 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
         const kd =
           pickNum(stats, "K/D Ratio", "K/D", "c2", "kd") ??
           (deaths > 0 ? kills / deaths : kills);
-        const adr = pickNum(
+        // i20 is TOTAL damage on this endpoint, not ADR — real ADR is c10.
+        const totalDamage = pickNum(stats, "Damage", "i20");
+        const namedAdr = pickNum(
           stats,
           "ADR",
           "Average Damage per Round",
           "Damage / Round",
-          "i20",
+          "c10",
         );
+        const roleStats = parseRoleStats(stats);
+        roleStats.rounds =
+          roundCount ??
+          (totalDamage != null && namedAdr != null && namedAdr > 0
+            ? Math.round(totalDamage / namedAdr)
+            : null);
+        const adr =
+          namedAdr ??
+          (totalDamage != null && roleStats.rounds != null && roleStats.rounds > 0
+            ? totalDamage / roleStats.rounds
+            : null);
         const prev = merged.get(playerId);
         if (!prev) {
           merged.set(playerId, {
@@ -151,6 +235,7 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
             adr,
             won,
             mapKey,
+            roleStats,
           });
           continue;
         }
@@ -167,6 +252,9 @@ function parseRounds(raw: unknown, pool: MapEntity[]): ThisGameLine[] {
               ? (prev.adr + adr) / 2
               : (prev.adr ?? adr),
           won: prev.won || won,
+          roleStats: prev.roleStats
+            ? mergeRoleStats(prev.roleStats, roleStats)
+            : roleStats,
         });
       }
     }
