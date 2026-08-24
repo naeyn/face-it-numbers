@@ -1,54 +1,95 @@
-import type { RoleLabel, RoleLabelKey, RoleStats } from "./types";
-import type { ThisGameLine } from "./match-stats";
+import type { HistoryGame, RoleLabel, RoleLabelKey } from "./types";
 
-// Draft thresholds per docs/role-pendants-spec.md — floors stop low-signal
-// awards; lobby-relative winners self-calibrate per match.
-const MIN_LINES = 8;
-const OPENER_ENTRY_RATE = 0.22;
-const OPENER_SUCCESS = 0.45;
-const AWPER_MIN_KILLS = 7;
-const AWPER_KILL_SHARE = 0.35;
-const UTILITY_MIN_DAMAGE = 120;
-const ONETAP_MIN_HS_PCT = 65;
-const ONETAP_MIN_KILLS = 15;
-const CLOSER_MIN_MVPS = 5;
-const PISTOL_MIN_KILLS = 7;
-const PISTOL_KILL_SHARE = 0.3;
-const SUPPORT_MIN_ASSISTS = 10;
-const SUPPORT_MAX_KD = 1.15;
+// Pre-match role pendants: playstyle tendencies read from each player's
+// recent history (last ~30 games), shown from the lobby onward as intel.
+// Lobby-relative (strict best among the 10 players) with absolute floors so
+// low-signal lobbies award nothing. Independent of the map-specific brief
+// tags. Roles that need advanced per-match stats (entry, sniper, utility,
+// clutches — absent from the history endpoint) await the backfill design in
+// docs/role-pendants-spec.md.
 
-type Line = ThisGameLine & { roleStats: RoleStats };
+const MIN_GAMES = 8;
+const MIN_PLAYERS = 6;
+const ONETAP_MIN_HS = 0.55;
+const ONETAP_MIN_KILLS = 120;
+const CLOSER_MIN_MVP_PER_ROUND = 0.12;
+const HIGHLIGHT_MIN_MULTI_PER_GAME = 1.0;
+const DAMAGE_MIN_ADR = 85;
+const SUPPORT_MIN_ASSIST_RATIO = 0.42;
+const SUPPORT_MAX_KD = 1.1;
 
-function perRound(value: number | null, rounds: number | null): number | null {
-  if (value == null || rounds == null || rounds <= 0) return null;
-  return value / rounds;
+export type RolePlayerHistory = {
+  playerId: string;
+  nickname: string;
+  games: HistoryGame[];
+};
+
+type Tendency = {
+  playerId: string;
+  nickname: string;
+  n: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  rounds: number;
+  mvps: number;
+  multi: number; // 3k + 4k + 5k rounds
+  hsPct: number | null; // kill-weighted, 0..1
+  adr: number | null;
+  kd: number | null;
+};
+
+function tendencyFor(player: RolePlayerHistory): Tendency | undefined {
+  const usable = player.games.filter(
+    (game) => game.kills != null && game.rounds != null && game.rounds > 0,
+  );
+  if (usable.length < MIN_GAMES) return undefined;
+  const sum = (pick: (game: HistoryGame) => number | null): number =>
+    usable.reduce((total, game) => total + (pick(game) ?? 0), 0);
+  const kills = sum((g) => g.kills);
+  const deaths = sum((g) => g.deaths);
+  const rounds = sum((g) => g.rounds);
+  const hsKillsWeighted = usable.reduce(
+    (total, game) =>
+      total + (game.hsPct != null && game.kills != null ? game.hsPct * game.kills : 0),
+    0,
+  );
+  const hsKillBase = usable.reduce(
+    (total, game) => total + (game.hsPct != null && game.kills != null ? game.kills : 0),
+    0,
+  );
+  const adrGames = usable.filter((game) => game.adr != null);
+  return {
+    playerId: player.playerId,
+    nickname: player.nickname,
+    n: usable.length,
+    kills,
+    deaths,
+    assists: sum((g) => g.assists),
+    rounds,
+    mvps: sum((g) => g.mvps),
+    multi: sum((g) => g.tripleKills) + sum((g) => g.quadroKills) + sum((g) => g.pentaKills),
+    hsPct: hsKillBase > 0 ? hsKillsWeighted / hsKillBase : null,
+    adr:
+      adrGames.length > 0
+        ? adrGames.reduce((total, game) => total + (game.adr ?? 0), 0) / adrGames.length
+        : null,
+    kd: deaths > 0 ? kills / deaths : null,
+  };
 }
 
-function hsPct(line: Line): number | null {
-  const { headshots, headshotPct } = line.roleStats;
-  if (headshots != null && line.kills > 0) return (headshots / line.kills) * 100;
-  return headshotPct;
-}
-
-function clutchWins(line: Line): number {
-  return (line.roleStats.oneV1Wins ?? 0) + (line.roleStats.oneV2Wins ?? 0);
-}
-
-function entryRate(line: Line): number | null {
-  return perRound(line.roleStats.entryCount, line.roleStats.rounds);
-}
-
-// Strict lobby max: a single player holds the highest non-null value.
-// Ties or an all-null field award nobody.
-function strictMax(lines: Line[], value: (line: Line) => number | null): Line | undefined {
-  let best: Line | undefined;
+function strictMax(
+  players: Tendency[],
+  value: (player: Tendency) => number | null,
+): Tendency | undefined {
+  let best: Tendency | undefined;
   let bestValue = -Infinity;
   let tied = false;
-  for (const line of lines) {
-    const v = value(line);
+  for (const player of players) {
+    const v = value(player);
     if (v == null) continue;
     if (v > bestValue) {
-      best = line;
+      best = player;
       bestValue = v;
       tied = false;
     } else if (v === bestValue) {
@@ -59,253 +100,110 @@ function strictMax(lines: Line[], value: (line: Line) => number | null): Line | 
 }
 
 function holdsStrictMax(
-  line: Line,
-  lines: Line[],
-  value: (line: Line) => number | null,
+  player: Tendency,
+  players: Tendency[],
+  value: (player: Tendency) => number | null,
 ): boolean {
-  return strictMax(lines, value)?.playerId === line.playerId;
+  return strictMax(players, value)?.playerId === player.playerId;
 }
 
 type RoleDef = {
   key: RoleLabelKey;
   text: string;
   tone: RoleLabel["tone"];
-  // absolute roles can award several players; lobby-relative ones at most one
-  absolute: boolean;
-  qualify: (line: Line, lines: Line[]) => string | undefined; // detail when awarded
+  qualify: (player: Tendency, players: Tendency[]) => string | undefined;
 };
 
-const one = (value: number | null): string => (value ?? 0).toFixed(2);
-
-// Precedence order per spec: rare flavor high, career last (Phase 2 roles
-// slot into this list when the Leetify phases land).
+// Precedence: rarest signal first; every role is lobby-relative, one winner.
 const ROLE_DEFS: RoleDef[] = [
-  {
-    key: "humiliation",
-    text: "Humiliation",
-    tone: "info",
-    absolute: true,
-    qualify: (line) => {
-      const knife = line.roleStats.knifeKills ?? 0;
-      const zeus = line.roleStats.zeusKills ?? 0;
-      if (knife + zeus >= 2 || (knife >= 1 && line.won)) {
-        const parts = [];
-        if (knife) parts.push(`${knife} knife kill${knife > 1 ? "s" : ""}`);
-        if (zeus) parts.push(`${zeus} Zeus kill${zeus > 1 ? "s" : ""}`);
-        return parts.join(" and ");
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "clutcher",
-    text: "Clutcher",
-    tone: "good",
-    absolute: true,
-    qualify: (line) => {
-      const v1 = line.roleStats.oneV1Wins ?? 0;
-      const v2 = line.roleStats.oneV2Wins ?? 0;
-      if (v1 + v2 >= 3 || (v1 + v2 >= 2 && v2 >= 1)) {
-        const parts = [];
-        if (v1) parts.push(`${v1} 1v1${v1 === 1 ? "" : "s"}`);
-        if (v2) parts.push(`${v2} 1v2${v2 === 1 ? "" : "s"}`);
-        return `Won ${v1 + v2} clutches: ${parts.join(" and ")}`;
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "highlight",
-    text: "Highlight reel",
-    tone: "good",
-    absolute: true,
-    qualify: (line) => {
-      const triple = line.roleStats.tripleKills ?? 0;
-      const quadro = line.roleStats.quadroKills ?? 0;
-      const penta = line.roleStats.pentaKills ?? 0;
-      if (penta >= 1 || quadro >= 2 || triple >= 5) {
-        const parts = [];
-        if (penta) parts.push(`${penta} ace${penta > 1 ? "s" : ""}`);
-        if (quadro) parts.push(`${quadro} four-kill round${quadro > 1 ? "s" : ""}`);
-        if (triple) parts.push(`${triple} triple-kill round${triple > 1 ? "s" : ""}`);
-        return parts.join(", ");
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "opener",
-    text: "Opener",
-    tone: "good",
-    absolute: false,
-    qualify: (line, lines) => {
-      const rate = entryRate(line);
-      const count = line.roleStats.entryCount;
-      const wins = line.roleStats.entryWins;
-      if (rate == null || count == null || wins == null || count <= 0) return undefined;
-      const success = wins / count;
-      if (rate >= OPENER_ENTRY_RATE && success >= OPENER_SUCCESS && holdsStrictMax(line, lines, entryRate)) {
-        return `Took the round's first duel ${count} times and won ${wins} — most first duels in this lobby`;
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "awper",
-    text: "AWPer",
-    tone: "info",
-    absolute: false,
-    qualify: (line, lines) => {
-      const sniper = line.roleStats.sniperKills;
-      if (sniper == null || sniper < AWPER_MIN_KILLS || line.kills <= 0) return undefined;
-      if (sniper / line.kills >= AWPER_KILL_SHARE && holdsStrictMax(line, lines, (l) => l.roleStats.sniperKills)) {
-        return `${sniper} of their ${line.kills} kills with a sniper rifle (${Math.round((sniper / line.kills) * 100)}%) — most in this lobby`;
-      }
-      return undefined;
-    },
-  },
   {
     key: "onetapper",
     text: "One-tapper",
     tone: "good",
-    absolute: false,
-    qualify: (line, lines) => {
-      const pct = hsPct(line);
-      if (pct == null || pct < ONETAP_MIN_HS_PCT || line.kills < ONETAP_MIN_KILLS) return undefined;
-      if (holdsStrictMax(line, lines, hsPct)) {
-        return `${Math.round(pct)}% of their ${line.kills} kills were headshots — highest rate in this lobby`;
-      }
-      return undefined;
+    qualify: (p, all) => {
+      if (p.hsPct == null || p.hsPct < ONETAP_MIN_HS || p.kills < ONETAP_MIN_KILLS)
+        return undefined;
+      if (!holdsStrictMax(p, all, (t) => t.hsPct)) return undefined;
+      return `${Math.round(p.hsPct * 100)}% headshots across ${p.kills} kills in their last ${p.n} games — highest rate in this lobby`;
     },
   },
   {
     key: "closer",
     text: "Closer",
     tone: "good",
-    absolute: false,
-    qualify: (line, lines) => {
-      const mvps = line.roleStats.mvps;
-      if (mvps == null || mvps < CLOSER_MIN_MVPS || clutchWins(line) < 1) return undefined;
-      if (!holdsStrictMax(line, lines, (l) => l.roleStats.mvps)) return undefined;
-      if (holdsStrictMax(line, lines, entryRate)) return undefined; // that's an opener
-      return `${mvps} round-MVP stars (most in this lobby) and ${clutchWins(line)} clutch${clutchWins(line) > 1 ? "es" : ""} won`;
+    qualify: (p, all) => {
+      const rate = p.rounds > 0 ? p.mvps / p.rounds : null;
+      if (rate == null || rate < CLOSER_MIN_MVP_PER_ROUND) return undefined;
+      if (!holdsStrictMax(p, all, (t) => (t.rounds > 0 ? t.mvps / t.rounds : null)))
+        return undefined;
+      return `${p.mvps} round-MVP stars over their last ${p.n} games (${rate.toFixed(2)}/round) — most in this lobby`;
     },
   },
   {
-    key: "spacetaker",
-    text: "Space taker",
+    key: "highlight",
+    text: "Highlight reel",
     tone: "good",
-    absolute: false,
-    qualify: (line, lines) => {
-      const rate = entryRate(line);
-      const count = line.roleStats.entryCount;
-      const wins = line.roleStats.entryWins;
-      if (rate == null || count == null || wins == null || count <= 0) return undefined;
-      const success = wins / count;
-      // the aggressive lobby-max entry player who fell through Opener
-      if (rate >= OPENER_ENTRY_RATE && success < OPENER_SUCCESS && holdsStrictMax(line, lines, entryRate)) {
-        return `Took the round's first duel ${count} times — most in this lobby, win or lose`;
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "utilityking",
-    text: "Utility king",
-    tone: "good",
-    absolute: false,
-    qualify: (line, lines) => {
-      const utilDmg = line.roleStats.utilityDamage;
-      const utilRate = perRound(utilDmg, line.roleStats.rounds);
-      if (utilDmg == null || utilRate == null) return undefined;
-      if (
-        utilDmg >= UTILITY_MIN_DAMAGE &&
-        holdsStrictMax(line, lines, (l) => perRound(l.roleStats.utilityDamage, l.roleStats.rounds))
-      ) {
-        const flashed = line.roleStats.enemiesFlashed;
-        const flashedPart = flashed ? ` and flashed ${flashed} enemies` : "";
-        return `Dealt ${Math.round(utilDmg)} damage with grenades (most in this lobby)${flashedPart}`;
-      }
-      return undefined;
-    },
-  },
-  {
-    key: "pistoldemon",
-    text: "Pistol demon",
-    tone: "info",
-    absolute: true,
-    qualify: (line) => {
-      const pistol = line.roleStats.pistolKills;
-      if (pistol == null || pistol < PISTOL_MIN_KILLS || line.kills <= 0) return undefined;
-      if (pistol / line.kills >= PISTOL_KILL_SHARE) {
-        return `${pistol} of their ${line.kills} kills with a pistol (${Math.round((pistol / line.kills) * 100)}%)`;
-      }
-      return undefined;
+    qualify: (p, all) => {
+      const rate = p.multi / p.n;
+      if (rate < HIGHLIGHT_MIN_MULTI_PER_GAME) return undefined;
+      if (!holdsStrictMax(p, all, (t) => t.multi / t.n)) return undefined;
+      return `${p.multi} rounds with 3+ kills in their last ${p.n} games — most in this lobby`;
     },
   },
   {
     key: "damagedealer",
     text: "Damage dealer",
     tone: "info",
-    absolute: false,
-    qualify: (line, lines) => {
-      if (line.adr == null) return undefined;
-      if (!holdsStrictMax(line, lines, (l) => l.adr)) return undefined;
-      if (holdsStrictMax(line, lines, (l) => l.kills)) return undefined; // just the top fragger
-      return `${Math.round(line.adr)} damage per round — highest in this lobby, without the most kills`;
+    qualify: (p, all) => {
+      if (p.adr == null || p.adr < DAMAGE_MIN_ADR) return undefined;
+      if (!holdsStrictMax(p, all, (t) => t.adr)) return undefined;
+      if (holdsStrictMax(p, all, (t) => t.kd)) return undefined; // just the best player
+      return `${Math.round(p.adr)} damage per round over their last ${p.n} games — highest in this lobby without the top K/D`;
     },
   },
   {
     key: "support",
     text: "Support",
     tone: "info",
-    absolute: false,
-    qualify: (line, lines) => {
-      const ratio = line.assists / Math.max(line.kills, 1);
-      if (line.assists < SUPPORT_MIN_ASSISTS || line.kd >= SUPPORT_MAX_KD) return undefined;
-      if (holdsStrictMax(line, lines, (l) => l.assists / Math.max(l.kills, 1))) {
-        return `${line.assists} assists next to ${line.kills} kills (${one(ratio)} per kill) — highest assist ratio in this lobby`;
-      }
-      return undefined;
+    qualify: (p, all) => {
+      const ratio = p.kills > 0 ? p.assists / p.kills : null;
+      if (ratio == null || ratio < SUPPORT_MIN_ASSIST_RATIO) return undefined;
+      if (p.kd == null || p.kd >= SUPPORT_MAX_KD) return undefined;
+      if (!holdsStrictMax(p, all, (t) => (t.kills > 0 ? t.assists / t.kills : null)))
+        return undefined;
+      return `${ratio.toFixed(2)} assists per kill over their last ${p.n} games — highest ratio in this lobby`;
     },
   },
 ];
 
 // Banter (negative-tone) role keys — gated by the banterLabels sub-toggle.
-// Phase 1 ships none; the Leetify phase adds baiter/teamflasher here.
+// Empty until the Leetify phase adds baiter/teamflasher.
 export const BANTER_ROLE_KEYS: ReadonlySet<string> = new Set<string>([]);
 
-// An "absolute" role that fires for this many players isn't discriminating —
-// either the stat means something else in this payload or the thresholds are
-// off for this match. Award nobody rather than flood the scoreboard.
-const MAX_ABSOLUTE_AWARDS = 3;
-
-export function assignRoleLabels(lines: ThisGameLine[]): RoleLabel[] {
-  const usable = lines.filter((line): line is Line => line.roleStats != null);
-  if (usable.length < MIN_LINES) return [];
+export function assignRoleLabels(players: RolePlayerHistory[]): RoleLabel[] {
+  const tendencies = players
+    .map(tendencyFor)
+    .filter((t): t is Tendency => t != null);
+  // Lobby-relative claims need most of the lobby to actually have history.
+  if (tendencies.length < MIN_PLAYERS) return [];
   const roles: RoleLabel[] = [];
   const taken = new Set<string>();
 
   for (const def of ROLE_DEFS) {
-    const awarded: RoleLabel[] = [];
-    for (const line of usable) {
-      if (taken.has(line.playerId)) continue;
-      const detail = def.qualify(line, usable);
+    for (const player of tendencies) {
+      if (taken.has(player.playerId)) continue;
+      const detail = def.qualify(player, tendencies);
       if (!detail) continue;
-      awarded.push({
-        playerId: line.playerId,
-        nickname: line.nickname,
+      roles.push({
+        playerId: player.playerId,
+        nickname: player.nickname,
         key: def.key,
         text: def.text,
         tone: def.tone,
         detail,
       });
-      if (!def.absolute) break; // lobby-relative roles award at most once
-    }
-    if (def.absolute && awarded.length > MAX_ABSOLUTE_AWARDS) continue;
-    for (const role of awarded) {
-      roles.push(role);
-      taken.add(role.playerId);
+      taken.add(player.playerId);
+      break; // lobby-relative: one winner per role
     }
   }
 

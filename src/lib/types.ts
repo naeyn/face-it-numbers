@@ -52,6 +52,14 @@ export type HistoryGame = {
   kr: number | null;
   won: boolean;
   at: number;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  rounds: number | null;
+  mvps: number | null;
+  tripleKills: number | null;
+  quadroKills: number | null;
+  pentaKills: number | null;
 };
 
 export type RoleStats = {

@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v20";
+const RENDER_VERSION = "v21";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -163,17 +163,17 @@ const LABEL_HINTS: Record<GameLabelKey, string> = {
 const ROLE_HINTS: Record<RoleLabelKey, string> = {
   humiliation: "Got knife or Zeus kills — the classic announcer award",
   clutcher: "Won multiple 1-versus-X clutch rounds",
-  highlight: "Had multi-kill rounds worth rewatching",
+  highlight: "Racks up multi-kill rounds game after game",
   opener: "Entry fragger: took the round's first duel most often, and won them",
   awper: "The lobby's sniper: biggest share of kills with a sniper rifle",
-  onetapper: "Cleanest aim in the lobby: highest headshot rate",
-  closer: "Finished rounds: the most MVP stars, plus clutches",
+  onetapper: "Cleanest aim in the lobby: highest headshot rate in recent games",
+  closer: "Finishes rounds: earns the most MVP stars in recent games",
   spacetaker:
     "Took the round's first duel most often, even when losing it — creates space",
   utilityking: "Dealt the most grenade damage in the lobby",
   pistoldemon: "Got a big share of their kills with pistols",
-  damagedealer: "Top damage output without converting it into the most kills",
-  support: "Set up teammates more than they fragged themselves",
+  damagedealer: "Consistently top damage output without the top K/D",
+  support: "Sets up teammates more than they frag themselves",
 };
 
 const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
@@ -257,7 +257,7 @@ function badgeFromRole(role: RoleLabel): Badge {
     tone: role.tone,
     hint: ROLE_HINTS[role.key],
     detail: role.detail,
-    scope: "Role · this match only, vs the other 9 players",
+    scope: "Role · tendency from their recent matches, vs this lobby",
     iconPath: ROLE_ICON_PATHS[role.key],
     attr: ROLE_ATTR,
     extraClass: " role",

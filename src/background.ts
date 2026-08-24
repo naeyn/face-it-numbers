@@ -150,13 +150,15 @@ async function getLobbyStats(
   const themAgg = aggregateTeamMaps(themRoster, statsByPlayer, KNOWN_MAPS, dropped, picked);
 
   let labels: LobbyStats["labels"] = [];
-  let roles: LobbyStats["roles"] = [];
   let youWon: boolean | null = null;
   const historyGames = roster.map((player) => ({
     playerId: player.player_id,
     nickname: player.nickname,
     games: statsByPlayer.get(player.player_id)?.games ?? [],
   }));
+  // Role pendants are pre-match intel: playstyle tendencies from each
+  // player's recent history, independent of this match's outcome or status.
+  const roles: LobbyStats["roles"] = assignRoleLabels(historyGames);
   const shouldLabel = !/vot|ready|config|created|sched|check/i.test(
     match.status ?? "",
   );
@@ -193,11 +195,6 @@ async function getLobbyStats(
         labelHistories,
         asOf,
       );
-      // Role pendants only on finished matches — partial mid-game counts
-      // would mislabel against thresholds tuned for full matches.
-      if (isMatchFinished(match.status ?? "")) {
-        roles = assignRoleLabels(lines);
-      }
       const youIds = new Set(youRoster.map((player) => player.player_id));
       const yours = lines.filter((line) => youIds.has(line.playerId));
       if (yours.length >= 3) {
@@ -205,7 +202,6 @@ async function getLobbyStats(
       }
     } catch {
       labels = [];
-      roles = [];
     }
   }
 
@@ -626,16 +622,6 @@ async function statsForPlayer(
       token,
     );
     const matches = asMatchList(raw);
-    if (matches.length > 0) {
-      // Pre-match roles verification: does the history endpoint carry the
-      // advanced per-game stats? Its compact-key dictionary differs from the
-      // match-stats one, so dump one raw row to pin it. Remove once mapped.
-      console.info(
-        "[fin] time_stats sample",
-        player.nickname,
-        JSON.stringify(matches[0]),
-      );
-    }
     const items = timeMatchesToItems(matches);
     if (items.length === 0) {
       return lifetimeFallback(player, pool, token, now);

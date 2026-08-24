@@ -142,14 +142,20 @@ export function parsePlayerMapStats(
       getStat(item.stats, "K/D Ratio", "c2", "kd") ??
         Number.NaN,
     );
-    const adrRaw = Number(getStat(item.stats, "ADR", "adr", "i20") ?? Number.NaN);
+    // Alias order matters: "Headshots %" is c4 (i16 is penta kills),
+    // headshot COUNT is i13 (i9 is MVPs), rounds is i12 (i18 is the score
+    // string) — per the verified compact-key dictionary.
+    const adrRaw = Number(getStat(item.stats, "ADR", "adr", "c10") ?? Number.NaN);
     const kills = Number(getStat(item.stats, "Kills", "i6") ?? Number.NaN);
     const deaths = Number(getStat(item.stats, "Deaths", "i8") ?? Number.NaN);
-    const hsRaw = Number(
-      getStat(item.stats, "Headshots %", "i16", "c4") ?? Number.NaN,
-    );
-    const hsCount = Number(getStat(item.stats, "Headshots", "i9") ?? Number.NaN);
-    const rounds = Number(getStat(item.stats, "Rounds", "i18") ?? Number.NaN);
+    const assists = Number(getStat(item.stats, "Assists", "i7") ?? Number.NaN);
+    const hsRaw = Number(getStat(item.stats, "Headshots %", "c4") ?? Number.NaN);
+    const hsCount = Number(getStat(item.stats, "Headshots", "i13") ?? Number.NaN);
+    const rounds = Number(getStat(item.stats, "Rounds", "i12") ?? Number.NaN);
+    const mvps = Number(getStat(item.stats, "MVPs", "i9") ?? Number.NaN);
+    const triple = Number(getStat(item.stats, "Triple Kills", "i14") ?? Number.NaN);
+    const quadro = Number(getStat(item.stats, "Quadro Kills", "i15") ?? Number.NaN);
+    const penta = Number(getStat(item.stats, "Penta Kills", "i16") ?? Number.NaN);
     const krRaw = Number(getStat(item.stats, "K/R Ratio", "c3", "kr") ?? Number.NaN);
     let hsPct: number | null = null;
     if (Number.isFinite(hsRaw) && hsRaw > 0) {
@@ -164,6 +170,8 @@ export function parsePlayerMapStats(
           ? kills / rounds
           : null;
     const adr = asAdr(adrRaw, rounds, kills, kr, elo);
+    const num = (value: number): number | null =>
+      Number.isFinite(value) && value >= 0 ? value : null;
     games.push({
       matchId: matchId ?? "",
       mapKey,
@@ -173,6 +181,14 @@ export function parsePlayerMapStats(
       kr: kr != null && Number.isFinite(kr) && kr >= 0 ? kr : null,
       won,
       at: matchTime(item.stats),
+      kills: num(kills),
+      deaths: num(deaths),
+      assists: num(assists),
+      rounds: num(rounds),
+      mvps: num(mvps),
+      tripleKills: num(triple),
+      quadroKills: num(quadro),
+      pentaKills: num(penta),
     });
     const current = counts.get(mapKey) ?? {
       games: 0,
@@ -218,17 +234,28 @@ export function parsePlayerMapStats(
   return { byMap, matchIds, games, elo, eloDelta };
 }
 
+// Compact keys verified 2026-08-24 against a ground-truth match (same
+// dictionary as the match-stats endpoint): i6/i7/i8 K/A/D, i9 MVPs,
+// i10 result, i12 rounds, i13 headshot kills, i14/i15/i16 triple/quadro/
+// penta, i18 score STRING ("16 / 14" — not a number), i20 total damage,
+// i40 double kills, c2 K/D, c3 K/R, c4 HS%, c10 ADR.
 export type TimeMatch = {
   i1?: string;
   i6?: string | number;
+  i7?: string | number;
   i8?: string | number;
   i9?: string | number;
   i10?: string | number;
+  i12?: string | number;
+  i13?: string | number;
+  i14?: string | number;
+  i15?: string | number;
   i16?: string | number;
-  i18?: string | number;
+  i40?: string | number;
   c2?: string | number;
   c3?: string | number;
   c4?: string | number;
+  c10?: string | number;
   map?: string;
   result?: string | number;
   gameMode?: string;
@@ -261,13 +288,19 @@ export function timeMatchesToItems(matches: TimeMatch[]): PlayerMatchItem[] {
         elo: String(match.elo ?? ""),
         date: String(match.date ?? ""),
         c2: String(kd),
-        ADR: String(match.i20 ?? match.adr ?? ""),
+        ADR: String(match.c10 ?? match.adr ?? ""),
+        Damage: String(match.i20 ?? ""),
         Kills: String(match.i6 ?? ""),
+        Assists: String(match.i7 ?? ""),
         Deaths: String(match.i8 ?? ""),
-        Headshots: String(match.i9 ?? ""),
-        "Headshots %": String(match.i16 ?? match.c4 ?? ""),
-        Rounds: String(match.i18 ?? ""),
+        MVPs: String(match.i9 ?? ""),
+        Headshots: String(match.i13 ?? ""),
+        "Headshots %": String(match.c4 ?? ""),
+        Rounds: String(match.i12 ?? ""),
         "K/R Ratio": String(match.c3 ?? ""),
+        "Triple Kills": String(match.i14 ?? ""),
+        "Quadro Kills": String(match.i15 ?? ""),
+        "Penta Kills": String(match.i16 ?? ""),
       },
     };
   });
