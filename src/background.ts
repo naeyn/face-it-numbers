@@ -626,6 +626,16 @@ async function statsForPlayer(
       token,
     );
     const matches = asMatchList(raw);
+    if (matches.length > 0) {
+      // Pre-match roles verification: does the history endpoint carry the
+      // advanced per-game stats? Its compact-key dictionary differs from the
+      // match-stats one, so dump one raw row to pin it. Remove once mapped.
+      console.info(
+        "[fin] time_stats sample",
+        player.nickname,
+        JSON.stringify(matches[0]),
+      );
+    }
     const items = timeMatchesToItems(matches);
     if (items.length === 0) {
       return lifetimeFallback(player, pool, token, now);
