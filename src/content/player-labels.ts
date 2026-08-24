@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v3";
+const RENDER_VERSION = "v4";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -93,11 +93,10 @@ const LABEL_CSS = `
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 10px 12px;
-  margin: 0 0 8px;
-  background: #16161a;
-  border: 1px solid #2b2b31;
-  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 10px;
+  background: #1f1f22;
+  border-radius: 12px;
 }
 .fin-role-strip .fin-player-label { margin: 0 !important; font-size: 12px !important; padding: 4px 11px !important; }
 .fin-role-nick {
@@ -304,12 +303,27 @@ function nickFromHref(href: string): string | undefined {
   }
 }
 
+// closest() cannot cross shadow boundaries — walk up through shadow hosts so
+// content inside our overlay's shadow root is recognized as ours.
+function inOurShadow(el: Element): boolean {
+  let root = el.getRootNode();
+  while (root instanceof ShadowRoot) {
+    const host = root.host;
+    if (host.id === "faceit-numbers-overlay" || host.closest("#faceit-numbers-overlay")) {
+      return true;
+    }
+    root = host.getRootNode();
+  }
+  return false;
+}
+
 function inSiteChrome(el: Element): boolean {
   if (
     el.closest("#faceit-numbers-overlay") ||
     el.closest(".fin-player-label") ||
     el.closest(".fin-role-strip") ||
-    el.closest("#fin-label-tip")
+    el.closest("#fin-label-tip") ||
+    inOurShadow(el)
   ) {
     return true;
   }
