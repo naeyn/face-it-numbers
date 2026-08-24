@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v17";
+const RENDER_VERSION = "v18";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -505,7 +505,7 @@ function injectOne(badge: Badge, allNicks: string[]): void {
 // player's avatar on the big cards, like Faceit's own avatar badges.
 
 const BADGE_SIZE = 28;
-const BADGE_OVERHANG = 9;
+const BADGE_INSET = 8;
 
 // Largest square-ish visual in the card is the avatar artwork — the only
 // element that has proven to measure reliably in Faceit's DOM. (The
@@ -543,8 +543,10 @@ function pinToCorner(span: HTMLElement, target: Element): void {
   const targetRect = target.getBoundingClientRect();
   const opRect = op.getBoundingClientRect();
   if (targetRect.width === 0 || opRect.width === 0) return;
-  span.style.top = `${Math.round(targetRect.top - opRect.top) - BADGE_OVERHANG}px`;
-  span.style.left = `${Math.round(targetRect.right - opRect.left) - BADGE_SIZE + BADGE_OVERHANG}px`;
+  // Inside the card's top-right corner: an overhang would collide with
+  // page-edge widgets and get clipped.
+  span.style.top = `${Math.round(targetRect.top - opRect.top) + BADGE_INSET}px`;
+  span.style.left = `${Math.round(targetRect.right - opRect.left) - BADGE_SIZE - BADGE_INSET}px`;
   span.style.right = "auto";
 }
 
