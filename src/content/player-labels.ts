@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v5";
+const RENDER_VERSION = "v6";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -87,31 +87,6 @@ const LABEL_CSS = `
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
-/* Role row: appended inside a player card as a full-width bottom row */
-.fin-role-card-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  flex-basis: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 8px 14px 10px;
-  margin-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-.fin-role-card-row .fin-player-label { margin: 0 !important; flex: 0 0 auto; }
-.fin-role-detail {
-  color: #8b93a2;
-  font-size: 11px;
-  line-height: 1.3;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* If the card lays out as a flex row, let our full-width row wrap below */
-.fin-card-host { flex-wrap: wrap !important; }
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -413,43 +388,16 @@ function markInlineHost(node: Element): void {
 
 function attachBadge(node: Element, badge: Badge, compact: boolean): void {
   if (alreadyLabeled(node, badge)) return;
-  node.after(badgeFor(badge, compact));
+  // A role pill sits after the form chip when the player has both.
+  const sibling = node.nextElementSibling;
+  const anchor =
+    badge.attr === ROLE_ATTR && sibling?.getAttribute(ATTR) === badge.playerId
+      ? sibling
+      : node;
+  anchor.after(badgeFor(badge, compact));
   if (compact) markInlineHost(node);
 }
 
-// ---- Role rows: each role renders as a full-width bottom row appended to
-// that player's own card (the big cards with the last-30 stats), never into
-// the cramped compact scoreboard rows.
-
-function roleCardRow(role: RoleLabel): HTMLDivElement {
-  const row = document.createElement("div");
-  row.setAttribute(STRIP_ATTR, "");
-  row.className = "fin-role-card-row";
-  row.append(badgeFor(badgeFromRole(role), false));
-  const detail = document.createElement("span");
-  detail.className = "fin-role-detail";
-  detail.textContent = role.detail;
-  detail.title = role.detail;
-  row.append(detail);
-  return row;
-}
-
-function injectRoleRow(role: RoleLabel, allNicks: string[]): void {
-  const seen = new Set<Element>();
-  for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
-    if (!nameMatches(el, role.nickname)) continue;
-    const card = findRow(el, role.nickname, allNicks);
-    if (seen.has(card)) continue;
-    seen.add(card);
-    if (isCompactRow(card)) continue; // only the big player cards
-    if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
-    card.append(roleCardRow(role));
-    if (card instanceof HTMLElement && getComputedStyle(card).display === "flex") {
-      card.classList.add("fin-card-host");
-    }
-  }
-}
 
 function nameMatches(el: Element, nickname: string): boolean {
   const href = el.getAttribute("href") ?? "";
@@ -521,6 +469,9 @@ function injectOne(badge: Badge, allNicks: string[]): void {
     if (seen.has(row)) continue;
     seen.add(row);
     const compact = isCompactRow(row);
+    // Role pills only live on the big player cards, next to the name —
+    // compact scoreboard rows stay form-labels-only.
+    if (compact && badge.attr === ROLE_ATTR) continue;
     const name =
       (compact
         ? scoreboardName(row, badge.nickname)
@@ -647,8 +598,9 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   ensureStyle();
   clearPlayerLabels();
   const allNicks = rosterNicks(stats);
+  // Form chips first: role pills anchor right after them next to the name.
   for (const badge of inline) injectOne(badge, allNicks);
-  for (const role of roles) injectRoleRow(role, allNicks);
+  for (const role of roles) injectOne(badgeFromRole(role), allNicks);
 }
 
 export function clearPlayerLabels(): void {
