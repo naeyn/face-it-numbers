@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v13";
+const RENDER_VERSION = "v14";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -504,6 +504,24 @@ function injectOne(badge: Badge, allNicks: string[]): void {
 // ---- Role avatar badges: the pendant overlays the top-right corner of the
 // player's avatar on the big cards, like Faceit's own avatar badges.
 
+const BADGE_SIZE = 28;
+const BADGE_OVERHANG = 8;
+
+// Absolute positioning resolves against whatever containing block the DOM
+// gives us (styled-components wrappers may be display:contents or have
+// transforms), so don't trust CSS offsets: measure the target's rendered
+// rect against the badge's actual offsetParent and pin in pixels.
+function pinToCorner(span: HTMLElement, target: Element): void {
+  const op = span.offsetParent;
+  if (!(op instanceof HTMLElement)) return; // keep CSS defaults
+  const targetRect = target.getBoundingClientRect();
+  const opRect = op.getBoundingClientRect();
+  if (targetRect.width === 0 || opRect.width === 0) return;
+  span.style.top = `${Math.round(targetRect.top - opRect.top) - BADGE_OVERHANG}px`;
+  span.style.left = `${Math.round(targetRect.right - opRect.left) - BADGE_SIZE + BADGE_OVERHANG}px`;
+  span.style.right = "auto";
+}
+
 function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
   const badge = badgeFromRole(role);
   const seen = new Set<Element>();
@@ -530,6 +548,7 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
       host.append(span);
+      pinToCorner(span, host);
     } else {
       const name = innermostName(card, role.nickname);
       if (name) attachBadge(name, badge, false);
