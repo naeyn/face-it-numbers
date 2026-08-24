@@ -559,7 +559,6 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
     const host = avatar?.parentElement;
-    const host = avatar?.parentElement;
     if (host && avatar) {
       host.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
