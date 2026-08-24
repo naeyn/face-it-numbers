@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v23";
+const RENDER_VERSION = "v24";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -120,6 +120,15 @@ const LABEL_CSS = `
   display: block;
   fill: currentColor;
   pointer-events: none;
+}
+/* Must outrank .avatar-badge's solid background (same importance, later rule) */
+.fin-player-label.role.avatar-badge.career {
+  box-sizing: border-box;
+  border: 2px solid transparent !important;
+  background:
+    linear-gradient(#17171b, #17171b) padding-box,
+    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
+  box-shadow: none !important;
 }
 #fin-label-tip {
   position: fixed;
