@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v14";
+const RENDER_VERSION = "v15";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -505,7 +505,33 @@ function injectOne(badge: Badge, allNicks: string[]): void {
 // player's avatar on the big cards, like Faceit's own avatar badges.
 
 const BADGE_SIZE = 28;
-const BADGE_OVERHANG = 8;
+const BADGE_OVERHANG = 11;
+
+// Largest square-ish visual in the card is the avatar artwork — the only
+// element that has proven to measure reliably in Faceit's DOM. (The
+// styles__PlayerCard div is an empty zero-size decorative layer.)
+function findAvatar(card: Element): Element | undefined {
+  let best: Element | undefined;
+  let bestArea = 0;
+  for (const el of deepElements(card)) {
+    let visual =
+      el.tagName === "IMG" || el.tagName === "CANVAS" || el.tagName === "VIDEO";
+    if (!visual && el instanceof HTMLElement) {
+      const bg = getComputedStyle(el).backgroundImage;
+      visual = !!bg && bg !== "none";
+    }
+    if (!visual) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 40) continue;
+    if (rect.width > 240 || rect.height > 320) continue; // banners, map art
+    const area = rect.width * rect.height;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+}
 
 // Absolute positioning resolves against whatever containing block the DOM
 // gives us (styled-components wrappers may be display:contents or have
@@ -532,23 +558,15 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (seen.has(card)) continue;
     seen.add(card);
     if (isCompactRow(card)) continue; // big player cards only
-    // Faceit's own card component; hash suffixes rotate, the prefix is stable.
-    const playerCard =
-      card.closest('[class*="styles__PlayerCard"]') ??
-      card.querySelector('[class*="styles__PlayerCard"]');
-    const host =
-      playerCard instanceof HTMLElement
-        ? playerCard
-        : card instanceof HTMLElement
-          ? card
-          : undefined;
-    if (host) {
-      if (host.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
+    if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
+    const avatar = findAvatar(card);
+    const host = avatar?.parentElement;
+    if (host && avatar) {
       host.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
       host.append(span);
-      pinToCorner(span, host);
+      pinToCorner(span, avatar);
     } else {
       const name = innermostName(card, role.nickname);
       if (name) attachBadge(name, badge, false);
