@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v19";
+const RENDER_VERSION = "v20";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -586,13 +586,20 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (isCompactRow(card)) continue; // big player cards only
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
-    // The avatar's own card: the PlayerCardContainer frame that pokes above
-    // the player row. Component names are stable across Faceit deploys,
-    // hash suffixes are not.
-    const anchor =
-      avatar?.closest('[class*="PlayerCardContainer"]') ??
-      (avatar ? visibleFrame(avatar, card) ?? avatar : undefined);
-    const host = anchor instanceof HTMLElement ? anchor : avatar?.parentElement;
+    // The avatar's own card: the PlayerCardContainer frame. Its visible
+    // outline (which pokes above the player row) is the styles__PlayerCard
+    // overlay INSIDE it — an empty absolutely-positioned layer, so it is a
+    // sibling of the artwork, not an ancestor. Pin to that when it has a
+    // real rect; the container is the fallback.
+    const container = avatar?.closest('[class*="PlayerCardContainer"]');
+    let anchor: Element | undefined =
+      container ?? (avatar ? visibleFrame(avatar, card) ?? avatar : undefined);
+    const frameLayer = container?.querySelector('[class*="PlayerCard-sc"]');
+    if (frameLayer) {
+      const rect = frameLayer.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) anchor = frameLayer;
+    }
+    const host = container instanceof HTMLElement ? container : avatar?.parentElement;
     if (host && anchor) {
       host.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
