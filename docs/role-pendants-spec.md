@@ -1,14 +1,39 @@
-# Role Pendants — Draft Spec (not implemented)
+# Role Pendants — Spec
 
-A second, orthogonal badge family shown next to the existing post-game performance labels
+**Direction pivot (2026-08-24): role pendants are PRE-MATCH INTEL.** They are playstyle
+tendencies computed from each player's recent history (last ~30 games), shown from the
+lobby onward — scouting information for the upcoming match, persisting after it ends.
+NOT a retroactive readout of the finished match, and independent of the map-specific
+roles planned for the pre-match brief.
+
+Implemented (from history, zero extra requests): One-tapper, Closer, Highlight reel,
+Damage dealer, Support — lobby-relative over the 10 players' histories, one winner per
+role, ≥8 usable games per player, ≥6 players with history. Rendered as an avatar-card
+corner badge (anchored to the `styles__PlayerCard` overlay layer).
+
+**History-endpoint finding (verified 2026-08-24):** history rows use the SAME
+compact-key dictionary as match-stats (proven on a shared ground-truth match) but carry
+only K/A/D `i6/i7/i8`, MVPs `i9`, HS kills `i13`, multikills `i14/i15/i16/i40`, rounds
+`i12` (`i18` is the score STRING), total damage `i20`, and `c2/c3/c4/c10`. This also
+fixed pre-existing parser bugs (penta kills read as HS%, MVPs as headshots, score as
+rounds).
+
+**Pending — advanced-stat backfill:** entry duels, sniper kills, utility, and 1v1/1v2
+clutches are absent from history rows. Roles like Opener/AWPer/Utility king/Clutcher
+need per-match stats fetched for each player's recent matches (~1 request per
+historical match; match stats are immutable, so a persistent `chrome.storage.local`
+cache makes repeat lobbies cheap). Budget sketch: last ~6 matches × 10 players, capped
+per poll tick, badges fill in progressively. The Leetify career roles (Phase 2a) are
+also pre-match intel and slot into the same precedence when built.
+
+Original design notes below; the post-game framing there is superseded by this pivot.
+
+---
+
+A second, orthogonal badge family shown next to the existing performance labels
 (`gameLabels`). Performance labels say *how you played vs. your own norm* (form axis);
-role pendants say *what job you did* (role axis). A player can carry one of each,
-side by side.
-
-Status: **Phase 0 complete, Phase 1 implemented and field-verified** on
-`feature/role-pendants`. Phases 2a/2b (Leetify) not started. The roster→steam64 path
-for Phase 2 is confirmed: Faceit's `/users/v1/users/{id}` exposes
-`platforms.steam.id64` / `games.cs2.game_id`.
+role pendants say *what job this player tends to do* (role axis). A player can carry
+one of each, side by side.
 
 ## Verified compact-key dictionary (Phase 0 result, 2026-08-23)
 
