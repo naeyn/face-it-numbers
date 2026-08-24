@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v16";
+const RENDER_VERSION = "v17";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -586,13 +586,20 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (isCompactRow(card)) continue; // big player cards only
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
-    const host = avatar?.parentElement;
-    if (host && avatar) {
+    // The visible card row is ListContentPlayer__Background (painted box);
+    // fall back through its holder, then the avatar frame. Component names
+    // are stable across Faceit deploys, hash suffixes are not.
+    const anchor =
+      avatar?.closest('[class*="ListContentPlayer__Background"]') ??
+      avatar?.closest('[class*="ListContentPlayer__Holder"]') ??
+      (avatar ? visibleFrame(avatar, card) ?? avatar : undefined);
+    const host = anchor instanceof HTMLElement ? anchor : avatar?.parentElement;
+    if (host && anchor) {
       host.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
       host.append(span);
-      pinToCorner(span, visibleFrame(avatar, card) ?? avatar);
+      pinToCorner(span, anchor);
     } else {
       const name = innermostName(card, role.nickname);
       if (name) attachBadge(name, badge, false);
