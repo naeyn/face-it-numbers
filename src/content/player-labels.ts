@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v9";
+const RENDER_VERSION = "v10";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -529,6 +529,23 @@ function findAvatar(card: Element): Element | undefined {
   return best;
 }
 
+// The visible avatar frame is the outermost ancestor that is still sized
+// like the avatar block (photo + padding), not the whole card row. Anchoring
+// there keeps the badge on the frame corner whether the artwork fills the
+// frame (custom card skins) or sits smaller inside it (round photos).
+function avatarFrame(avatar: Element, card: Element): HTMLElement | undefined {
+  const aRect = avatar.getBoundingClientRect();
+  let frame: HTMLElement | undefined = avatar.parentElement ?? undefined;
+  let current: HTMLElement | null = avatar.parentElement;
+  while (current && current !== card) {
+    const rect = current.getBoundingClientRect();
+    if (rect.width > aRect.width + 56 || rect.height > aRect.height + 72) break;
+    frame = current;
+    current = current.parentElement;
+  }
+  return frame;
+}
+
 function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
   const badge = badgeFromRole(role);
   const seen = new Set<Element>();
@@ -542,17 +559,12 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
     const host = avatar?.parentElement;
-    if (host && avatar) {
-      host.classList.add("fin-avatar-badge-host");
+    const frame = avatar ? avatarFrame(avatar, card) : undefined;
+    if (frame) {
+      frame.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
-      // Pin to the avatar's own rendered corner — the host container can be
-      // larger than the avatar, so static offsets would drift.
-      const hostRect = host.getBoundingClientRect();
-      const avatarRect = avatar.getBoundingClientRect();
-      span.style.top = `${Math.round(avatarRect.top - hostRect.top) - 9}px`;
-      span.style.right = `${Math.round(hostRect.right - avatarRect.right) - 9}px`;
-      host.append(span);
+      frame.append(span);
     } else {
       // No avatar found in this card structure — fall back to an inline
       // pill next to the name so the role is never silently dropped.
