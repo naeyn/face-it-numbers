@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v10";
+const RENDER_VERSION = "v11";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -559,12 +559,23 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
     const host = avatar?.parentElement;
-    const frame = avatar ? avatarFrame(avatar, card) : undefined;
-    if (frame) {
-      frame.classList.add("fin-avatar-badge-host");
+    const host = avatar?.parentElement;
+    if (host && avatar) {
+      host.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
-      frame.append(span);
+      // Append to the avatar's parent (a containing block that provably
+      // positions correctly) but aim the offsets at the visible frame's
+      // rect, so full-bleed card skins and small round photos land on the
+      // same corner.
+      const frame = avatarFrame(avatar, card);
+      const frameRect = frame?.getBoundingClientRect();
+      const target =
+        frameRect && frameRect.width > 0 ? frameRect : avatar.getBoundingClientRect();
+      const hostRect = host.getBoundingClientRect();
+      span.style.top = `${Math.round(target.top - hostRect.top) - 9}px`;
+      span.style.right = `${Math.round(hostRect.right - target.right) - 9}px`;
+      host.append(span);
     } else {
       // No avatar found in this card structure — fall back to an inline
       // pill next to the name so the role is never silently dropped.
