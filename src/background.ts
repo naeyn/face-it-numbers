@@ -9,12 +9,14 @@ import {
 import { fetchCaptainDrops } from "./lib/captain-drops";
 import { assignGameLabels, priorGames, sameMatchId } from "./lib/game-labels";
 import { assignRoleLabels } from "./lib/role-labels";
+import { collectLeetifyProfiles } from "./lib/leetify";
 import { fetchThisGame, isMatchFinished } from "./lib/match-stats";
 import {
   CACHE_TTL_MS,
   FETCH_CONCURRENCY,
   HISTORY_SOFT_DEADLINE_MS,
   LABEL_HISTORY_PAGES,
+  LEETIFY_SOFT_DEADLINE_MS,
   PLAYER_FETCH_CONCURRENCY,
   SAMPLE_LIMIT,
 } from "./lib/constants";
@@ -156,9 +158,15 @@ async function getLobbyStats(
     nickname: player.nickname,
     games: statsByPlayer.get(player.player_id)?.games ?? [],
   }));
-  // Role pendants are pre-match intel: playstyle tendencies from each
-  // player's recent history, independent of this match's outcome or status.
-  const roles: LobbyStats["roles"] = assignRoleLabels(historyGames);
+  // Role pendants are pre-match intel: Leetify career profiles first
+  // (best-effort, soft deadline — slow fetches land next poll), Faceit
+  // history tendencies as fallback. Independent of this match's status.
+  const leetify = await collectLeetifyProfiles(
+    roster,
+    token,
+    LEETIFY_SOFT_DEADLINE_MS,
+  ).catch(() => new Map<string, never>());
+  const roles: LobbyStats["roles"] = assignRoleLabels(historyGames, leetify);
   const shouldLabel = !/vot|ready|config|created|sched|check/i.test(
     match.status ?? "",
   );
@@ -352,6 +360,13 @@ function normalizeRoster(raw: unknown): RosterPlayer[] {
     const playerId = asString(row.id) ?? asString(row.player_id);
     const nickname = asString(row.nickname);
     if (!playerId || !nickname) return [];
+    const games = asRecord(row.games);
+    const cs2 = asRecord(games?.cs2);
+    const steam64 =
+      asString(row.game_player_id) ??
+      asString(row.gamePlayerId) ??
+      asString(cs2?.game_player_id) ??
+      asString(cs2?.game_id);
     return [
       {
         player_id: playerId,
@@ -364,6 +379,7 @@ function normalizeRoster(raw: unknown): RosterPlayer[] {
               ? row.game_skill_level
               : undefined,
         elo: rosterElo(row),
+        steam64: steam64 && /^\d{17}$/.test(steam64) ? steam64 : undefined,
       },
     ];
   });

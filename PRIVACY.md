@@ -17,6 +17,14 @@ FACEIT.
 - **Match and player statistics.** Match rosters, map veto state, and each
   player's recent match statistics are fetched from Faceit's servers to build
   the overlay.
+- **Leetify public statistics.** For the role-pendant feature, the extension
+  queries the Leetify public API (`api-public.cs-prod.leetify.com`) with the
+  public Steam64 game identifiers of the players in the match room to fetch
+  their public career statistics. These identifiers are public gaming ids
+  exposed by Faceit, not personal data collected from you. Leetify responses
+  are cached only in session storage for up to 15 minutes and are never stored
+  persistently, per Leetify's developer guidelines. Career-based badges are
+  marked "Data provided by Leetify."
 
 ## What the extension stores
 

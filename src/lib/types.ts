@@ -6,6 +6,7 @@ export type RosterPlayer = {
   avatar?: string;
   game_skill_level?: number;
   elo?: number;
+  steam64?: string;
 };
 
 export type MapEntity = {
@@ -97,7 +98,13 @@ export type RoleLabelKey =
   | "utilityking"
   | "pistoldemon"
   | "damagedealer"
-  | "support";
+  | "support"
+  | "trader"
+  | "flashsupport"
+  | "crosshair"
+  | "spray"
+  | "reflexes"
+  | "sided";
 
 export type RoleLabel = {
   playerId: string;
@@ -106,6 +113,7 @@ export type RoleLabel = {
   text: string;
   tone: "good" | "bad" | "info";
   detail: string;
+  source: "history" | "leetify";
 };
 
 export type GameLabelKey =

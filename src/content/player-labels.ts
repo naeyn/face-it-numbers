@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v21";
+const RENDER_VERSION = "v22";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -87,6 +87,12 @@ const LABEL_CSS = `
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
+/* Career (Leetify-sourced) pendants: dashed ring instead of solid */
+.fin-player-label.role.career {
+  box-sizing: border-box;
+  border: 1.5px dashed currentColor !important;
+  box-shadow: none !important;
+}
 /* Role pendant as an avatar corner badge, like Faceit's own avatar badges */
 .fin-avatar-badge-host { position: relative !important; }
 .fin-player-label.role.avatar-badge {
@@ -174,6 +180,12 @@ const ROLE_HINTS: Record<RoleLabelKey, string> = {
   pistoldemon: "Got a big share of their kills with pistols",
   damagedealer: "Consistently top damage output without the top K/D",
   support: "Sets up teammates more than they frag themselves",
+  trader: "Reliably trades fallen teammates — career data via Leetify",
+  flashsupport: "Their flashbangs actually blind people — career data via Leetify",
+  crosshair: "Best crosshair placement among Leetify-tracked players here",
+  spray: "Best spray control among Leetify-tracked players here",
+  reflexes: "Fastest reaction time among Leetify-tracked players here",
+  sided: "Performs much better on one side of the map — via Leetify",
 };
 
 const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
@@ -194,6 +206,15 @@ const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
   damagedealer:
     "M8 1.2 9.6 5l3.9-1.7-2.3 3.5 3.6 1.9-4 .6.9 4-3.7-2.2L4.3 13l.9-4-4-.6L4.8 6.5 2.5 3.3 6.4 5z",
   support: "M7 3h2v4h4v2H9v4H7V9H3V7h4z",
+  trader: "M2 4.2h8V1.8L14.6 6 10 10.2V7.8H2zM14 11.8H6v2.4L1.4 10 6 5.8v2.4h8z",
+  flashsupport:
+    "M8 5.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6zM7.4 0h1.2v3.2H7.4zM7.4 12.8h1.2V16H7.4zM0 7.4h3.2v1.2H0zM12.8 7.4H16v1.2h-3.2zM2.2 3.1l.9-.9 2.2 2.2-.9.9zM10.7 11.6l.9-.9 2.2 2.2-.9.9zM13 2.2l.9.9-2.2 2.2-.9-.9zM4.4 10.7l.9.9-2.2 2.2-.9-.9z",
+  crosshair:
+    "M7.4 1h1.2v3H7.4zM7.4 12h1.2v3H7.4zM1 7.4h3v1.2H1zM12 7.4h3v1.2h-3zM8 5.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z",
+  spray:
+    "M3 3.2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM13 9.8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5.5 11a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM10.5 2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z",
+  reflexes: "M9.2 1.2 3.8 8.6h3.7l-.9 6.2 6.2-8.6H9.1l1.1-5z",
+  sided: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8V1.5z",
 };
 
 const ICON_PATHS: Record<GameLabelKey, string> = {
@@ -250,6 +271,7 @@ function badgeFromLabel(label: GameLabel): Badge {
 }
 
 function badgeFromRole(role: RoleLabel): Badge {
+  const career = role.source === "leetify";
   return {
     playerId: role.playerId,
     nickname: role.nickname,
@@ -257,10 +279,12 @@ function badgeFromRole(role: RoleLabel): Badge {
     tone: role.tone,
     hint: ROLE_HINTS[role.key],
     detail: role.detail,
-    scope: "Role · tendency from their recent matches, vs this lobby",
+    scope: career
+      ? "Role · career data provided by Leetify"
+      : "Role · tendency from their recent matches, vs this lobby",
     iconPath: ROLE_ICON_PATHS[role.key],
     attr: ROLE_ATTR,
-    extraClass: " role",
+    extraClass: career ? " role career" : " role",
   };
 }
 
