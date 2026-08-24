@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v6";
+const RENDER_VERSION = "v7";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -87,6 +87,30 @@ const LABEL_CSS = `
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
+/* Role pendant as an avatar corner badge, like Faceit's own avatar badges */
+.fin-avatar-badge-host { position: relative !important; }
+.fin-player-label.role.avatar-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 0 0 28px !important;
+  justify-content: center;
+  border-radius: 999px !important;
+  background: #17171b !important;
+  z-index: 12;
+  overflow: visible !important;
+}
+.fin-player-label.role.avatar-badge svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+  fill: currentColor;
+  pointer-events: none;
+}
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -469,14 +493,50 @@ function injectOne(badge: Badge, allNicks: string[]): void {
     if (seen.has(row)) continue;
     seen.add(row);
     const compact = isCompactRow(row);
-    // Role pills only live on the big player cards, next to the name —
-    // compact scoreboard rows stay form-labels-only.
-    if (compact && badge.attr === ROLE_ATTR) continue;
     const name =
       (compact
         ? scoreboardName(row, badge.nickname)
         : innermostName(row, badge.nickname)) ?? start;
     attachBadge(name, badge, compact);
+  }
+}
+
+// ---- Role avatar badges: the pendant overlays the top-right corner of the
+// player's avatar on the big cards, like Faceit's own avatar badges.
+
+function findAvatar(card: Element): Element | undefined {
+  let best: Element | undefined;
+  let bestArea = 0;
+  for (const el of card.querySelectorAll("img, canvas, video")) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 48 || rect.height < 48) continue;
+    const area = rect.width * rect.height;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
+  const badge = badgeFromRole(role);
+  const seen = new Set<Element>();
+  for (const el of deepElements(document)) {
+    if (inSiteChrome(el)) continue;
+    if (!nameMatches(el, role.nickname)) continue;
+    const card = findRow(el, role.nickname, allNicks);
+    if (seen.has(card)) continue;
+    seen.add(card);
+    if (isCompactRow(card)) continue; // big player cards only
+    const avatar = findAvatar(card);
+    const host = avatar?.parentElement;
+    if (!host) continue;
+    if (host.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
+    host.classList.add("fin-avatar-badge-host");
+    const span = badgeFor(badge, true);
+    span.classList.add("avatar-badge");
+    host.append(span);
   }
 }
 
@@ -598,9 +658,8 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   ensureStyle();
   clearPlayerLabels();
   const allNicks = rosterNicks(stats);
-  // Form chips first: role pills anchor right after them next to the name.
   for (const badge of inline) injectOne(badge, allNicks);
-  for (const role of roles) injectOne(badgeFromRole(role), allNicks);
+  for (const role of roles) injectRoleAvatarBadge(role, allNicks);
 }
 
 export function clearPlayerLabels(): void {
@@ -613,6 +672,9 @@ export function clearPlayerLabels(): void {
   });
   document.querySelectorAll(".fin-card-host").forEach((node) => {
     node.classList.remove("fin-card-host");
+  });
+  document.querySelectorAll(".fin-avatar-badge-host").forEach((node) => {
+    node.classList.remove("fin-avatar-badge-host");
   });
 }
 
