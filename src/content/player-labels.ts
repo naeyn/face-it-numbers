@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v11";
+const RENDER_VERSION = "v12";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -504,48 +504,6 @@ function injectOne(badge: Badge, allNicks: string[]): void {
 // ---- Role avatar badges: the pendant overlays the top-right corner of the
 // player's avatar on the big cards, like Faceit's own avatar badges.
 
-// Largest square-ish visual in the card is the avatar (pierces shadow DOM,
-// accepts imgs, canvases, and background-image divs; skips tiny flag icons).
-function findAvatar(card: Element): Element | undefined {
-  let best: Element | undefined;
-  let bestArea = 0;
-  const candidates: Element[] = card instanceof Element ? [card] : [];
-  for (const el of [...candidates, ...deepElements(card)]) {
-    let visual = el.tagName === "IMG" || el.tagName === "CANVAS" || el.tagName === "VIDEO";
-    if (!visual && el instanceof HTMLElement) {
-      const bg = getComputedStyle(el).backgroundImage;
-      visual = !!bg && bg !== "none";
-    }
-    if (!visual) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 40 || rect.height < 40) continue;
-    if (rect.width > 240 || rect.height > 320) continue; // banners, map art
-    const area = rect.width * rect.height;
-    if (area > bestArea) {
-      best = el;
-      bestArea = area;
-    }
-  }
-  return best;
-}
-
-// The visible avatar frame is the outermost ancestor that is still sized
-// like the avatar block (photo + padding), not the whole card row. Anchoring
-// there keeps the badge on the frame corner whether the artwork fills the
-// frame (custom card skins) or sits smaller inside it (round photos).
-function avatarFrame(avatar: Element, card: Element): HTMLElement | undefined {
-  const aRect = avatar.getBoundingClientRect();
-  let frame: HTMLElement | undefined = avatar.parentElement ?? undefined;
-  let current: HTMLElement | null = avatar.parentElement;
-  while (current && current !== card) {
-    const rect = current.getBoundingClientRect();
-    if (rect.width > aRect.width + 56 || rect.height > aRect.height + 72) break;
-    frame = current;
-    current = current.parentElement;
-  }
-  return frame;
-}
-
 function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
   const badge = badgeFromRole(role);
   const seen = new Set<Element>();
@@ -557,28 +515,15 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     seen.add(card);
     if (isCompactRow(card)) continue; // big player cards only
     if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
-    const avatar = findAvatar(card);
-    const host = avatar?.parentElement;
-    if (host && avatar) {
-      host.classList.add("fin-avatar-badge-host");
+    if (card instanceof HTMLElement) {
+      // Pin to the top-right corner of the player card itself.
+      card.classList.add("fin-avatar-badge-host");
       const span = badgeFor(badge, true);
       span.classList.add("avatar-badge");
-      // Append to the avatar's parent (a containing block that provably
-      // positions correctly) but aim the offsets at the visible frame's
-      // rect, so full-bleed card skins and small round photos land on the
-      // same corner.
-      const frame = avatarFrame(avatar, card);
-      const frameRect = frame?.getBoundingClientRect();
-      const target =
-        frameRect && frameRect.width > 0 ? frameRect : avatar.getBoundingClientRect();
-      const hostRect = host.getBoundingClientRect();
-      span.style.top = `${Math.round(target.top - hostRect.top) - 9}px`;
-      span.style.right = `${Math.round(hostRect.right - target.right) - 9}px`;
-      host.append(span);
+      span.style.top = "6px";
+      span.style.right = "6px";
+      card.append(span);
     } else {
-      // No avatar found in this card structure — fall back to an inline
-      // pill next to the name so the role is never silently dropped.
-      console.debug("[fin] role badge: no avatar host for", role.nickname);
       const name = innermostName(card, role.nickname);
       if (name) attachBadge(name, badge, false);
     }
