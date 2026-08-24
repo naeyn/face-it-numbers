@@ -18,7 +18,7 @@ const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v22";
+const RENDER_VERSION = "v23";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -87,10 +87,14 @@ const LABEL_CSS = `
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
-/* Career (Leetify-sourced) pendants: dashed ring instead of solid */
+/* Career (Leetify-sourced) pendants: Leetify brand gradient ring
+   (their --primary #f84982 to --purple #6f42c1) */
 .fin-player-label.role.career {
   box-sizing: border-box;
-  border: 1.5px dashed currentColor !important;
+  border: 2px solid transparent !important;
+  background:
+    linear-gradient(#17171b, #17171b) padding-box,
+    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
   box-shadow: none !important;
 }
 /* Role pendant as an avatar corner badge, like Faceit's own avatar badges */
