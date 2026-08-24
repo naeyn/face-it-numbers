@@ -13,11 +13,12 @@ import type { ThisGameLine } from "../lib/match-stats";
 
 const ATTR = "data-fin-label";
 const ROLE_ATTR = "data-fin-role";
+const STRIP_ATTR = "data-fin-role-strip";
 const STYLE_ID = "faceit-numbers-player-labels";
 // Bump on ANY badge rendering change (CSS, icons, structure): the repaint
 // dedup compares signatures against badges already in the DOM, which survive
 // extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v2";
+const RENDER_VERSION = "v3";
 
 const LABEL_CSS = `
 .fin-player-label {
@@ -86,6 +87,25 @@ const LABEL_CSS = `
 .fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
 .fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
 .fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
+/* Role strip: one card-styled row above each team's player cards */
+.fin-role-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  background: #16161a;
+  border: 1px solid #2b2b31;
+  border-radius: 8px;
+}
+.fin-role-strip .fin-player-label { margin: 0 !important; font-size: 12px !important; padding: 4px 11px !important; }
+.fin-role-nick {
+  color: #8b93a2;
+  font-weight: 600;
+  margin-left: 7px;
+  letter-spacing: 0;
+}
 #fin-label-tip {
   position: fixed;
   z-index: 2147483646;
@@ -288,6 +308,7 @@ function inSiteChrome(el: Element): boolean {
   if (
     el.closest("#faceit-numbers-overlay") ||
     el.closest(".fin-player-label") ||
+    el.closest(".fin-role-strip") ||
     el.closest("#fin-label-tip")
   ) {
     return true;
@@ -371,14 +392,66 @@ function markInlineHost(node: Element): void {
 
 function attachBadge(node: Element, badge: Badge, compact: boolean): void {
   if (alreadyLabeled(node, badge)) return;
-  // Role pendants sit after the performance label when one is present.
-  const sibling = node.nextElementSibling;
-  const anchor =
-    badge.attr === ROLE_ATTR && sibling?.getAttribute(ATTR) === badge.playerId
-      ? sibling
-      : node;
-  anchor.after(badgeFor(badge, compact));
+  node.after(badgeFor(badge, compact));
   if (compact) markInlineHost(node);
+}
+
+// ---- Role strip: roles render in one card-styled row above each team's
+// player cards instead of inside the cramped scoreboard rows.
+
+function roleChip(role: RoleLabel): HTMLSpanElement {
+  const badge = badgeFromRole(role);
+  const chip = badgeFor(badge, false);
+  const nick = document.createElement("span");
+  nick.className = "fin-role-nick";
+  nick.textContent = role.nickname;
+  chip.append(nick);
+  return chip;
+}
+
+// The container holding the most distinct player rows of this team is the
+// roster list; the strip goes right above its topmost row.
+function teamAnchor(teamNicks: string[], allNicks: string[]): Element | undefined {
+  const byParent = new Map<Element, Set<Element>>();
+  for (const nickname of teamNicks) {
+    for (const el of deepElements(document)) {
+      if (inSiteChrome(el)) continue;
+      if (!nameMatches(el, nickname)) continue;
+      const row = findRow(el, nickname, allNicks);
+      const parent = row.parentElement;
+      if (!parent) continue;
+      const rows = byParent.get(parent) ?? new Set<Element>();
+      rows.add(row);
+      byParent.set(parent, rows);
+    }
+  }
+  let best: Set<Element> | undefined;
+  for (const rows of byParent.values()) {
+    if (!best || rows.size > best.size) best = rows;
+  }
+  if (!best || best.size < 2) return undefined;
+  return [...best].reduce((top, row) =>
+    row.getBoundingClientRect().top < top.getBoundingClientRect().top ? row : top,
+  );
+}
+
+function injectRoleStrip(
+  roles: RoleLabel[],
+  teamNicks: string[],
+  allNicks: string[],
+): void {
+  const badged = roles.filter((role) =>
+    teamNicks.some((nick) => nicknamesEqual(nick, role.nickname)),
+  );
+  if (badged.length === 0) return;
+  const anchor = teamAnchor(teamNicks, allNicks);
+  if (!anchor?.parentElement) return;
+  const strip = document.createElement("div");
+  strip.setAttribute(STRIP_ATTR, "");
+  strip.className = "fin-role-strip";
+  strip.setAttribute("aria-label", "Match roles");
+  for (const role of badged) strip.append(roleChip(role));
+  anchor.parentElement.insertBefore(strip, anchor);
 }
 
 function nameMatches(el: Element, nickname: string): boolean {
@@ -546,16 +619,15 @@ function labelsFromPage(stats: LobbyStats): GameLabel[] {
 
 export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   const settings = await loadSettings();
-  const badges: Badge[] = [];
-  if (settings.gameLabels) {
-    badges.push(...labelsFromPage(stats).map(badgeFromLabel));
-  }
-  if (settings.roleLabels) {
-    const roles = (stats.roles ?? []).filter(
-      (role) => settings.banterLabels || !BANTER_ROLE_KEYS.has(role.key),
-    );
-    badges.push(...roles.map(badgeFromRole));
-  }
+  const inline: Badge[] = settings.gameLabels
+    ? labelsFromPage(stats).map(badgeFromLabel)
+    : [];
+  const roles: RoleLabel[] = settings.roleLabels
+    ? (stats.roles ?? []).filter(
+        (role) => settings.banterLabels || !BANTER_ROLE_KEYS.has(role.key),
+      )
+    : [];
+  const badges = [...inline, ...roles.map(badgeFromRole)];
   if (badges.length === 0) {
     clearPlayerLabels();
     return;
@@ -578,14 +650,23 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
   ensureStyle();
   clearPlayerLabels();
   const allNicks = rosterNicks(stats);
-  // Performance labels first: role pendants anchor after them in the row.
-  for (const badge of badges) injectOne(badge, allNicks);
+  for (const badge of inline) injectOne(badge, allNicks);
+  injectRoleStrip(
+    roles,
+    stats.you.players.map((player) => player.nickname),
+    allNicks,
+  );
+  injectRoleStrip(
+    roles,
+    stats.them.players.map((player) => player.nickname),
+    allNicks,
+  );
 }
 
 export function clearPlayerLabels(): void {
   hideTip();
   document
-    .querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`)
+    .querySelectorAll(`[${ATTR}], [${ROLE_ATTR}], [${STRIP_ATTR}]`)
     .forEach((node) => node.remove());
   document.querySelectorAll(".fin-label-host").forEach((node) => {
     node.classList.remove("fin-label-host");
