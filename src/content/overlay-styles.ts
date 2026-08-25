@@ -373,13 +373,13 @@ button.on {
   cursor: help;
 }
 
-/* Pre-game expectations read as forecasts: dashed outline, no fill —
+/* Pre-game expectations read as forecasts: solid outline, no fill —
    distinct from the filled form labels and outlined-pill role pendants. */
-.brief-tag.hot { border: 1px dashed #ff5500; background: transparent; color: #ff8a55; }
-.brief-tag.good { border: 1px dashed #3f7a4c; background: transparent; color: #9ee59e; }
-.brief-tag.cold { border: 1px dashed #8a4444; background: transparent; color: #ff9a9a; }
-.brief-tag.bad { border: 1px dashed #7a4c33; background: transparent; color: #f0b090; }
-.brief-tag.info { border: 1px dashed #3d5680; background: transparent; color: #9ec1ff; }
+.brief-tag.hot { border: 1px solid #ff5500; background: transparent; color: #ff8a55; }
+.brief-tag.good { border: 1px solid #3f7a4c; background: transparent; color: #9ee59e; }
+.brief-tag.cold { border: 1px solid #8a4444; background: transparent; color: #ff9a9a; }
+.brief-tag.bad { border: 1px solid #7a4c33; background: transparent; color: #f0b090; }
+.brief-tag.info { border: 1px solid #3d5680; background: transparent; color: #9ec1ff; }
 
 .tip {
   position: fixed;

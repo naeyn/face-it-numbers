@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["chrome"]
   },
-  "include": ["src", "manifest.config.ts", "vite.config.ts"]
+  "include": ["src", "preview", "manifest.config.ts", "vite.config.ts", "vite.preview.config.ts"]
 }

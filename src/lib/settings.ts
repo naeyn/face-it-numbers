@@ -17,6 +17,7 @@ export type FeatureKey =
   | "captainDrops"
   | "stackOverlap"
   | "eloSwing"
+  | "streakLabels"
   | "recentForm"
   | "mapKd"
   | "outlier"
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: FeatureSettings = {
   captainDrops: true,
   stackOverlap: true,
   eloSwing: true,
+  streakLabels: true,
   recentForm: true,
   mapKd: true,
   outlier: true,
@@ -72,6 +74,11 @@ export const FEATURE_GROUPS: {
       { key: "stackOverlap", label: "Stack overlap", hint: "Last-30 games where at least 3 of this roster queued together" },
       { key: "eloSwing", label: "Elo", hint: "Team average Elo now, with last-30 change in parentheses" },
       { key: "captainDrops", label: "Enemy captain drops", hint: "How often they veto each map" },
+      {
+        key: "streakLabels",
+        label: "Win / loss streaks",
+        hint: "Badge on players riding a 4+ match run, all maps — lobby only",
+      },
       {
         key: "preBrief",
         label: "Pre-match briefing",

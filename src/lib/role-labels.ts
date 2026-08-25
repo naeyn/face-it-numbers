@@ -81,13 +81,13 @@ function holdsBest<T extends { playerId: string }>(
 
 // ---- Career roles from Leetify profiles ----
 
-type CareerPlayer = {
+export type CareerPlayer = {
   playerId: string;
   nickname: string;
   profile: LeetifyProfile;
 };
 
-type CareerDef = {
+export type CareerDef = {
   key: RoleLabelKey;
   text: string | ((player: CareerPlayer) => string);
   tone: RoleLabel["tone"];
@@ -102,7 +102,7 @@ function bestOpeningSuccess(profile: LeetifyProfile): number | null {
   return Math.max(ct, t);
 }
 
-const CAREER_DEFS: CareerDef[] = [
+export const CAREER_DEFS: CareerDef[] = [
   {
     key: "opener",
     text: "Opener",
@@ -249,14 +249,14 @@ function tendencyFor(player: RolePlayerHistory): Tendency | undefined {
   };
 }
 
-type HistoryDef = {
+export type HistoryDef = {
   key: RoleLabelKey;
   text: string;
   tone: RoleLabel["tone"];
   qualify: (player: Tendency, players: Tendency[]) => string | undefined;
 };
 
-const HISTORY_DEFS: HistoryDef[] = [
+export const HISTORY_DEFS: HistoryDef[] = [
   {
     key: "onetapper",
     text: "One-tapper",
