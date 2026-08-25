@@ -1,4 +1,8 @@
-import { FACEIT_API_BASE, FACEIT_SITE_API_BASE } from "./constants";
+import {
+  FACEIT_API_BASE,
+  FACEIT_SITE_API_BASE,
+  RATE_LIMIT_COOLDOWN_MS,
+} from "./constants";
 
 export class FaceitApiError extends Error {
   constructor(
@@ -41,6 +45,24 @@ function unwrap(data: unknown): unknown {
   return data;
 }
 
+// Shared cooldown after a hard 429: many pipeline requests run in parallel,
+// and once Faceit starts limiting, each of them retrying only feeds the same
+// limiter. One failure trips the breaker; everyone else fails fast until it
+// expires and callers degrade to caches.
+let cooldownUntil = 0;
+
+function cooldownActive(): boolean {
+  return Date.now() < cooldownUntil;
+}
+
+function tripCooldown(retryAfterHeader: string | null): void {
+  const retryAfter = Number(retryAfterHeader);
+  const waitMs = Number.isFinite(retryAfter)
+    ? Math.min(Math.max(retryAfter * 1000, RATE_LIMIT_COOLDOWN_MS), 60000)
+    : RATE_LIMIT_COOLDOWN_MS;
+  cooldownUntil = Math.max(cooldownUntil, Date.now() + waitMs);
+}
+
 async function fetchOnce(
   url: string,
   token: string | undefined,
@@ -52,7 +74,11 @@ async function fetchOnce(
     credentials: "omit",
   });
 
-  if ((response.status === 429 || response.status === 503) && attempt < 2) {
+  const canRetry =
+    response.status === 503
+      ? attempt < 2
+      : response.status === 429 && attempt < 1 && !cooldownActive();
+  if (canRetry) {
     const retryAfter = Number(response.headers.get("Retry-After"));
     // Cap the wait: an honest Retry-After of 30s+ must not stall the whole
     // refresh pipeline — better to fail this request and degrade.
@@ -74,6 +100,10 @@ export async function faceitGet(
   const urls = [`${FACEIT_API_BASE}${path}`, `${FACEIT_SITE_API_BASE}${path}`];
   let lastError: FaceitApiError | undefined;
 
+  if (cooldownActive()) {
+    throw new FaceitApiError(429, "Rate limited by Faceit.");
+  }
+
   for (const url of urls) {
     const response = await fetchOnce(url, token, 0);
     if (response.status === 404) {
@@ -82,6 +112,7 @@ export async function faceitGet(
     if (response.status === 429) {
       // Rate limited after retries: trying the fallback base would only add
       // more pressure on the same limiter. Fail fast; callers degrade.
+      tripCooldown(response.headers.get("Retry-After"));
       throw new FaceitApiError(429, "Rate limited by Faceit.");
     }
     if (response.status === 401 || response.status === 403) {

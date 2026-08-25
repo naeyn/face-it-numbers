@@ -1,4 +1,4 @@
-import { CACHE_TTL_MS } from "./constants";
+import { CACHE_TTL_MS, THIS_GAME_EMPTY_RETRY_MS } from "./constants";
 import { FaceitApiError, faceitGet } from "./faceit-api";
 import { normalizeMapKey } from "./maps";
 import type { MapEntity, RoleStats } from "./types";
@@ -275,6 +275,12 @@ export async function fetchThisGame(
   if (cached && now - cached.at < CACHE_TTL_MS && cached.lines.length > 0) {
     return cached.lines;
   }
+  // Negative cache: while a match is live every stats path 404s, and probing
+  // all of them each poll is ~30 requests of pure rate-limit pressure. Hold
+  // the empty answer briefly instead of re-probing on every tick.
+  if (cached && now - cached.at < THIS_GAME_EMPTY_RETRY_MS) {
+    return cached.lines;
+  }
   const ids = [...new Set([matchId, matchId.replace(/^1-/, ""), `1-${matchId.replace(/^1-/, "")}`])];
   const paths = ids.flatMap((id) => [
     `/stats/v1/stats/matches/${id}`,
@@ -298,6 +304,7 @@ export async function fetchThisGame(
       }
     }
   }
+  thisGameCache.set(matchId, { at: now, lines: [] });
   return [];
 }
 

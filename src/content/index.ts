@@ -1,6 +1,17 @@
-import type { ExtensionMessage, LobbyStats, LobbyStatsResponse } from "../lib/types";
+import type {
+  ExtensionMessage,
+  LobbyStats,
+  LobbyStatsError,
+  LobbyStatsResponse,
+} from "../lib/types";
 import { votingOpen } from "../lib/briefing";
-import { LOBBY_POLL_MS, VOTE_POLL_MS } from "../lib/constants";
+import { isMatchFinished } from "../lib/match-stats";
+import {
+  ERROR_BACKOFF_MAX_MS,
+  FINISHED_POLL_MS,
+  LOBBY_POLL_MS,
+  VOTE_POLL_MS,
+} from "../lib/constants";
 import { extensionAlive, isContextInvalidated } from "../lib/extension";
 import { absorbSmart } from "../lib/calibration";
 import { SETTINGS_KEY, loadSettings } from "../lib/settings";
@@ -30,6 +41,7 @@ let cardObserver: MutationObserver | undefined;
 let labelObserver: MutationObserver | undefined;
 let inFlight = false;
 let halted = false;
+let failStreak = 0;
 
 function send<T>(message: ExtensionMessage): Promise<T> {
   if (!extensionAlive()) {
@@ -84,11 +96,19 @@ async function refresh(): Promise<void> {
     if (currentMatchId !== matchId) return;
 
     if (!response.ok) {
-      if (response.error === "NOT_LOGGED_IN") panel.showNeedLogin();
+      // Rate limits count double so the backoff opens up faster while the
+      // shared API cooldown drains.
+      failStreak = Math.min(failStreak + (response.error === "RATE_LIMITED" ? 2 : 1), 5);
+      // A transient failure must not wipe an already-rendered briefing:
+      // keep the stale data and surface the problem in the notice strip.
+      if (latestStats) panel.setNotice(staleNotice(response));
+      else if (response.error === "NOT_LOGGED_IN") panel.showNeedLogin();
       else panel.showError(response.message);
       return;
     }
 
+    failStreak = 0;
+    panel.setNotice(undefined);
     latestStats = applyVisiblePool(response.data);
     latestStats.smart = await absorbSmart(latestStats);
     panel.render(latestStats);
@@ -99,16 +119,37 @@ async function refresh(): Promise<void> {
       halt();
       return;
     }
-    ensureOverlay().showError(
-      error instanceof Error ? error.message : "Could not load lobby stats.",
-    );
+    failStreak = Math.min(failStreak + 1, 5);
+    const panel = ensureOverlay();
+    if (latestStats) panel.setNotice("Refresh failed — showing last data");
+    else {
+      panel.showError(
+        error instanceof Error ? error.message : "Could not load lobby stats.",
+      );
+    }
   } finally {
     inFlight = false;
   }
 }
 
+function staleNotice(response: LobbyStatsError): string {
+  if (response.error === "RATE_LIMITED") {
+    return "Faceit is rate limiting — showing last data";
+  }
+  if (response.error === "NOT_LOGGED_IN") {
+    return "Faceit session expired — log in again to refresh";
+  }
+  return "Refresh failed — showing last data";
+}
+
 function pollDelay(): number {
-  return votingOpen(latestStats) ? VOTE_POLL_MS : LOBBY_POLL_MS;
+  const base = votingOpen(latestStats)
+    ? VOTE_POLL_MS
+    : latestStats && isMatchFinished(latestStats.status)
+      ? FINISHED_POLL_MS
+      : LOBBY_POLL_MS;
+  if (failStreak === 0) return base;
+  return Math.min(base * 2 ** failStreak, ERROR_BACKOFF_MAX_MS);
 }
 
 function schedulePoll(): void {
@@ -116,6 +157,12 @@ function schedulePoll(): void {
   if (pollTimer != null) window.clearTimeout(pollTimer);
   pollTimer = window.setTimeout(() => {
     pollTimer = undefined;
+    // Hidden tab = the user is in-game: polling would only burn rate limit.
+    // The visibilitychange listener refreshes the moment they come back.
+    if (document.hidden) {
+      schedulePoll();
+      return;
+    }
     void refresh().finally(() => {
       schedulePoll();
     });
@@ -146,6 +193,7 @@ function startMatch(matchId: string): void {
 function stopMatch(): void {
   currentMatchId = undefined;
   latestStats = undefined;
+  failStreak = 0;
   if (pollTimer != null) {
     window.clearTimeout(pollTimer);
     pollTimer = undefined;
@@ -173,6 +221,11 @@ function syncFromUrl(): void {
 syncFromUrl();
 urlTimer = window.setInterval(syncFromUrl, URL_CHECK_MS);
 window.addEventListener("popstate", syncFromUrl);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || halted || !currentMatchId) return;
+  void refresh();
+  schedulePoll();
+});
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (!extensionAlive()) {
