@@ -241,7 +241,7 @@ export type LobbyStatsSuccess = {
 
 export type LobbyStatsError = {
   ok: false;
-  error: "NOT_LOGGED_IN" | "MATCH_NOT_FOUND" | "API_ERROR";
+  error: "NOT_LOGGED_IN" | "MATCH_NOT_FOUND" | "RATE_LIMITED" | "API_ERROR";
   message: string;
 };
 

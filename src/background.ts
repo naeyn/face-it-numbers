@@ -77,7 +77,9 @@ chrome.runtime.onMessage.addListener(
               ? "NOT_LOGGED_IN"
               : status === 404
                 ? "MATCH_NOT_FOUND"
-                : "API_ERROR";
+                : status === 429
+                  ? "RATE_LIMITED"
+                  : "API_ERROR";
           sendResponse({
             ok: false,
             error: errorCode,
@@ -511,6 +513,34 @@ function inferMatchAt(
   return undefined;
 }
 
+function histCacheKey(playerId: string): string {
+  return `finHist:${playerId}`;
+}
+
+function rememberHist(playerId: string, entry: CacheEntry): void {
+  histCache.set(playerId, entry);
+  void chrome.storage.session
+    .set({ [histCacheKey(playerId)]: entry })
+    .catch(() => {});
+}
+
+// The MV3 worker suspends after ~30s idle and takes histCache with it;
+// without the session copy every wake-up re-runs the full as-of backfill.
+async function readHistCache(
+  playerId: string,
+  now: number,
+): Promise<CacheEntry | undefined> {
+  const cached = histCache.get(playerId);
+  if (cached && now - cached.at < CACHE_TTL_MS) return cached;
+  const session = await chrome.storage.session.get(histCacheKey(playerId));
+  const stored = session[histCacheKey(playerId)] as CacheEntry | undefined;
+  if (stored && now - stored.at < CACHE_TTL_MS) {
+    histCache.set(playerId, stored);
+    return stored;
+  }
+  return undefined;
+}
+
 async function itemsThrough(
   playerId: string,
   token: string | undefined,
@@ -518,8 +548,8 @@ async function itemsThrough(
   seedItems: ReturnType<typeof timeMatchesToItems> | undefined,
   now: number,
 ): Promise<ReturnType<typeof timeMatchesToItems>> {
-  const cached = histCache.get(playerId);
-  if (cached?.items && now - cached.at < CACHE_TTL_MS) return cached.items;
+  const cached = await readHistCache(playerId, now);
+  if (cached?.items) return cached.items;
 
   const collected = [...(seedItems ?? [])];
   const priorCount = () =>
@@ -544,7 +574,7 @@ async function itemsThrough(
       break;
     }
   }
-  histCache.set(playerId, { at: now, items: collected });
+  rememberHist(playerId, { at: now, items: collected });
   return collected;
 }
 

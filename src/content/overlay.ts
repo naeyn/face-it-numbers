@@ -51,6 +51,7 @@ export class Overlay {
   private root: ShadowRoot;
   private panel: HTMLDivElement;
   private header: HTMLDivElement;
+  private notice: HTMLDivElement;
   private body: HTMLDivElement;
   private selectedMap: string | undefined;
   private dragging = false;
@@ -67,6 +68,7 @@ export class Overlay {
   private tip: HTMLDivElement;
   private paintKey = "";
   private onboardEl: HTMLDivElement | undefined;
+  private noticeText: string | undefined;
 
   constructor(callbacks: OverlayCallbacks) {
     this.callbacks = callbacks;
@@ -93,6 +95,10 @@ export class Overlay {
       <button type="button" data-action="collapse" aria-label="Collapse">−</button>
     `;
 
+    this.notice = document.createElement("div");
+    this.notice.className = "notice";
+    this.notice.style.display = "none";
+
     this.body = document.createElement("div");
     this.body.className = "body";
     this.body.innerHTML = `<p class="muted">Loading map stats…</p>`;
@@ -100,7 +106,7 @@ export class Overlay {
     this.tip = document.createElement("div");
     this.tip.className = "tip";
 
-    this.panel.append(this.header, this.body);
+    this.panel.append(this.header, this.notice, this.body);
     this.root.append(style, this.panel, this.tip);
     document.documentElement.append(this.host);
     applyTeamColors(this.host, this.settings.youColor, this.settings.themColor);
@@ -178,6 +184,19 @@ export class Overlay {
 
   showError(message: string): void {
     this.body.innerHTML = `<p class="muted err">${escapeHtml(message)}</p>`;
+  }
+
+  // Non-destructive status strip: keeps the rendered briefing intact while a
+  // refresh fails transiently (rate limits etc.). Pass undefined to clear.
+  setNotice(message: string | undefined): void {
+    this.noticeText = message || undefined;
+    if (this.noticeText) this.notice.textContent = this.noticeText;
+    this.syncNotice();
+  }
+
+  private syncNotice(): void {
+    const visible = Boolean(this.noticeText) && !this.collapsed && !this.onboardEl;
+    this.notice.style.display = visible ? "" : "none";
   }
 
   render(stats: LobbyStats): void {
@@ -828,12 +847,14 @@ export class Overlay {
     this.onboardEl = el;
     this.body.style.display = "none";
     this.panel.append(el);
+    this.syncNotice();
   }
 
   private async finishOnboarding(): Promise<void> {
     this.onboardEl?.remove();
     this.onboardEl = undefined;
     this.body.style.display = this.collapsed ? "none" : "";
+    this.syncNotice();
     if (!extensionAlive()) return;
     try {
       await chrome.storage.local.set({ [ONBOARD_KEY]: true });
@@ -846,6 +867,7 @@ export class Overlay {
     this.collapsed = !this.collapsed;
     this.body.style.display = this.collapsed || this.onboardEl ? "none" : "";
     if (this.onboardEl) this.onboardEl.style.display = this.collapsed ? "none" : "";
+    this.syncNotice();
     const button = this.header.querySelector('[data-action="collapse"]');
     if (button) button.textContent = this.collapsed ? "+" : "−";
   }

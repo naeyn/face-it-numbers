@@ -61,6 +61,14 @@ button.on {
   background: #ff55001f;
 }
 
+.notice {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #ffc46b;
+  background: #ff990014;
+  border-bottom: 1px solid #ff990033;
+}
+
 .body { padding: 8px 10px 12px; }
 
 .legend {
