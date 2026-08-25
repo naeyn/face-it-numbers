@@ -210,6 +210,43 @@ function rosterNicks(stats: LobbyStats): string[] {
   return [...stats.you.players, ...stats.them.players].map((player) => player.nickname);
 }
 
+function nickKey(nickname: string): string {
+  return nickname.trim().toLowerCase();
+}
+
+// Every element that matched SOME roster nickname, bucketed by that nickname
+// and kept in document order.
+type Roster = Map<string, Element[]>;
+
+// One pass for the whole roster, instead of one pass per badge. The two costs
+// in a pass do not depend on which badge is being placed: `inSiteChrome` is
+// five closest() walks plus a rect read, and the text test concatenates a
+// container's entire subtree. Scanning per badge re-paid both ten-odd times
+// and — worse — interleaved those rect reads with badge insertions, so every
+// badge after the first forced a synchronous relayout. Scan once, place after.
+function scanRoster(nicknames: string[]): Roster {
+  const buckets: Roster = new Map();
+  for (const nickname of nicknames) buckets.set(nickKey(nickname), []);
+  const keys = [...buckets.keys()];
+  if (keys.length === 0) return buckets;
+  for (const el of deepElements(document)) {
+    if (inSiteChrome(el)) continue;
+    const href = el.getAttribute("href") ?? "";
+    const fromHref = href ? nickFromHref(href) : undefined;
+    const hrefKey = fromHref ? nickKey(fromHref) : undefined;
+    const textKey = nickKey((el.textContent ?? "").replace(/\s+/g, " "));
+    for (const key of keys) {
+      // Same predicate as nameMatches, with the per-element half hoisted out.
+      if (key === hrefKey || key === textKey) buckets.get(key)!.push(el);
+    }
+  }
+  return buckets;
+}
+
+function startsFor(roster: Roster, nickname: string): Element[] {
+  return roster.get(nickKey(nickname)) ?? [];
+}
+
 function hasNick(root: Element, nickname: string): boolean {
   for (const el of [root, ...root.querySelectorAll("a, span, div, p, strong")]) {
     if (nameMatches(el, nickname)) return true;
@@ -256,14 +293,14 @@ function innermostName(row: Element, nickname: string): Element | undefined {
   return ownBest ?? textBest;
 }
 
-function injectOne(badge: Badge, allNicks: string[]): void {
-  const starts: Element[] = [];
-  for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
-    if (nameMatches(el, badge.nickname)) starts.push(el);
-  }
+// A resolved target: which element a badge goes next to. Produced in the read
+// phase, consumed in the write phase — nothing here touches the DOM.
+type Placement = { badge: Badge; node: Element; compact: boolean };
+
+function planOne(badge: Badge, allNicks: string[], roster: Roster): Placement[] {
   const seen = new Set<Element>();
-  for (const start of starts) {
+  const placements: Placement[] = [];
+  for (const start of startsFor(roster, badge.nickname)) {
     const row = findRow(start, badge.nickname, allNicks);
     if (seen.has(row)) continue;
     seen.add(row);
@@ -272,8 +309,9 @@ function injectOne(badge: Badge, allNicks: string[]): void {
       (compact
         ? scoreboardName(row, badge.nickname)
         : innermostName(row, badge.nickname)) ?? start;
-    attachBadge(name, badge, compact);
+    placements.push({ badge, node: name, compact });
   }
+  return placements;
 }
 
 // ---- Role avatar badges: the pendant overlays the top-right corner of the
@@ -349,17 +387,35 @@ function visibleFrame(avatar: Element, card: Element): Element | undefined {
   return undefined;
 }
 
-function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
+// An avatar pendant that has found its card, its host, and the box it pins to.
+// `pinToCorner` still runs in the write phase — it has to read the span's own
+// offsetParent — but it is deferred until every insertion is done, so the whole
+// batch costs one relayout instead of one per pendant.
+type AvatarPlacement = {
+  badge: Badge;
+  card: Element;
+  host: Element;
+  anchor: Element;
+};
+
+type RolePlan = { avatars: AvatarPlacement[]; inline: Placement[] };
+
+function planRoleAvatarBadge(
+  role: RoleLabel,
+  allNicks: string[],
+  roster: Roster,
+): RolePlan {
+  // Rebuilt per role rather than reusing the ordered badge from the caller,
+  // which is what the previous per-role pass did: avatar pendants keep
+  // order 0 and enter together, they do not join the row-badge stagger.
   const badge = badgeFromRole(role);
+  const plan: RolePlan = { avatars: [], inline: [] };
   const seen = new Set<Element>();
-  for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
-    if (!nameMatches(el, role.nickname)) continue;
+  for (const el of startsFor(roster, role.nickname)) {
     const card = findRow(el, role.nickname, allNicks);
     if (seen.has(card)) continue;
     seen.add(card);
     if (isCompactRow(card)) continue; // big player cards only
-    if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
     // The avatar's own card: the PlayerCardContainer frame. Its visible
     // outline (which pokes above the player row) is the styles__PlayerCard
@@ -376,27 +432,36 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     }
     const host = container instanceof HTMLElement ? container : avatar?.parentElement;
     if (host && anchor) {
-      host.classList.add("fin-avatar-badge-host");
-      const span = badgeFor(badge, true);
-      span.classList.add("avatar-badge");
-      host.append(span);
-      pinToCorner(span, anchor);
+      plan.avatars.push({ badge, card, host, anchor });
     } else {
       const name = innermostName(card, role.nickname);
-      if (name) attachBadge(name, badge, false);
+      if (name) plan.inline.push({ badge, node: name, compact: false });
     }
   }
+  return plan;
+}
+
+// Returns the inserted span so the caller can pin it once all writes are done.
+function attachAvatarBadge(placement: AvatarPlacement): HTMLElement | undefined {
+  const { badge, card, host } = placement;
+  if (card.querySelector(`[${ROLE_ATTR}="${badge.playerId}"]`)) return undefined;
+  host.classList.add("fin-avatar-badge-host");
+  const span = badgeFor(badge, true);
+  span.classList.add("avatar-badge");
+  host.append(span);
+  return span;
 }
 
 function scrapeLines(stats: LobbyStats): ThisGameLine[] {
-  const roster = [...stats.you.players, ...stats.them.players];
+  const players = [...stats.you.players, ...stats.them.players];
   const youIds = new Set(stats.you.players.map((player) => player.player_id));
   const lines: ThisGameLine[] = [];
+  // Read-only, and runs before any badge is inserted, so it can share the
+  // same single pass rather than re-walking the document per player.
+  const roster = scanRoster(players.map((player) => player.nickname));
 
-  for (const player of roster) {
-    for (const el of deepElements(document)) {
-      if (inSiteChrome(el)) continue;
-      if (!nameMatches(el, player.nickname)) continue;
+  for (const player of players) {
+    for (const el of startsFor(roster, player.nickname)) {
       let row: Element | null = el;
       for (let i = 0; i < 8 && row; i += 1) {
         const text = (row.textContent ?? "").replace(/\s+/g, " ");
@@ -525,9 +590,29 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
     badges.map(entryKey).filter((key) => !animated.has(key)),
   );
   const allNicks = rosterNicks(stats);
-  for (const badge of inline) injectOne(badge, allNicks);
-  for (const badge of streaks) injectOne(badge, allNicks);
-  for (const role of roles) injectRoleAvatarBadge(role, allNicks);
+  const roster = scanRoster(allNicks);
+  // Reads first: resolve every badge's target — which involves rect reads via
+  // isCompactRow and findAvatar — before anything is inserted, so no insertion
+  // can invalidate a measurement taken for a later badge.
+  const inlinePlan = inline.flatMap((badge) => planOne(badge, allNicks, roster));
+  const streakPlan = streaks.flatMap((badge) => planOne(badge, allNicks, roster));
+  const rolePlans = roles.map((role) => planRoleAvatarBadge(role, allNicks, roster));
+  // Writes second, in family order: attachBadge walks past sibling badges of
+  // families that sort ahead of it, so form labels must land before streaks and
+  // streaks before role pills for the row order to come out right.
+  for (const item of inlinePlan) attachBadge(item.node, item.badge, item.compact);
+  for (const item of streakPlan) attachBadge(item.node, item.badge, item.compact);
+  const pins: Array<[HTMLElement, Element]> = [];
+  for (const plan of rolePlans) {
+    for (const item of plan.avatars) {
+      const span = attachAvatarBadge(item);
+      if (span) pins.push([span, item.anchor]);
+    }
+    for (const item of plan.inline) attachBadge(item.node, item.badge, false);
+  }
+  // Pinning reads geometry again, so it goes last: the first pin flushes one
+  // relayout covering every insertion above, the rest read a clean tree.
+  for (const [span, anchor] of pins) pinToCorner(span, anchor);
   entering = new Set();
 }
 
