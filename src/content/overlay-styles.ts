@@ -121,7 +121,9 @@ button.on {
   color: #c8c8c8;
 }
 
-.side .stat.stack { cursor: help; }
+.side .stat.stack,
+.side .stat.elo,
+.side .stat .delta { cursor: help; }
 
 .side .stat b {
   color: #f2f2f2;

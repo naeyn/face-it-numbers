@@ -666,9 +666,13 @@ export class Overlay {
       const stat = document.createElement("span");
       stat.className = "stat stack";
       const names = insight.stackNames.join(", ");
-      stat.title = names
-        ? `${insight.stack} last-30 games with at least 3 together: ${names}`
-        : "No last-30 games where at least three of this roster queued together";
+      this.bindHover(
+        stat,
+        `${insight.stack} stacked`,
+        names
+          ? `Last-30 games with at least 3 of this roster together: ${names}`
+          : "No last-30 games where at least three of this roster queued together",
+      );
       const value = document.createElement("b");
       value.textContent = String(insight.stack);
       stat.append(value, document.createTextNode(" stacked"));
@@ -678,8 +682,11 @@ export class Overlay {
     if (this.settings.eloSwing) {
       const stat = document.createElement("span");
       stat.className = "stat elo";
-      stat.title =
-        "Average Faceit Elo for this roster. The number in parentheses is the change over their last 30 games.";
+      this.bindHover(
+        stat,
+        "Team Elo",
+        "Average Faceit Elo across this roster right now.",
+      );
       if (insight.elo != null) {
         const value = document.createElement("b");
         value.textContent = String(Math.round(insight.elo));
@@ -692,6 +699,11 @@ export class Overlay {
         const rounded = Math.round(insight.eloDelta);
         delta.className = `delta ${rounded >= 0 ? "up" : "down"}`;
         delta.textContent = `(${formatElo(insight.eloDelta)})`;
+        this.bindHover(
+          delta,
+          `${formatElo(insight.eloDelta)} elo`,
+          `What this roster has gained or lost over their last 30 games, averaged across the five players. They are ${rounded >= 0 ? "trending up" : "trending down"}.`,
+        );
         stat.append(document.createTextNode(" "), delta);
       } else if (insight.elo == null) {
         const value = document.createElement("b");
