@@ -234,6 +234,7 @@ export class Overlay {
     return [
       stats.matchId,
       stats.status,
+      stats.myFaction,
       this.tab,
       this.briefMap ?? "",
       this.selectedMap ?? "",

@@ -40,6 +40,7 @@ let urlTimer: number | undefined;
 let cardObserver: MutationObserver | undefined;
 let labelObserver: MutationObserver | undefined;
 let inFlight = false;
+let queuedRefresh = false;
 let halted = false;
 let failStreak = 0;
 
@@ -64,11 +65,36 @@ function halt(): void {
   }
 }
 
+/**
+ * Relabelling the sides needs no network: both rosters are already in hand.
+ * Swapping locally is what makes the button feel instant — and what keeps it
+ * working at all while Faceit is rate limiting us, when a refresh would fail
+ * and leave the panel unchanged.
+ */
+function swapTeams(stats: LobbyStats): LobbyStats {
+  return {
+    ...stats,
+    myFaction: stats.myFaction === "faction1" ? "faction2" : "faction1",
+    you: stats.them,
+    them: stats.you,
+    youWon: stats.youWon == null ? null : !stats.youWon,
+    // These belong to the captain who is now on our side; the next successful
+    // refresh refetches the other one's.
+    captainDrops: [],
+  };
+}
+
 function ensureOverlay(): Overlay {
   if (overlay) return overlay;
   overlay = new Overlay({
     onSwap: () => {
       swapped = !swapped;
+      if (latestStats) {
+        latestStats = swapTeams(latestStats);
+        overlay?.render(latestStats);
+        void injectMapCards(latestStats);
+        void injectPlayerLabels(latestStats);
+      }
       void refresh();
     },
   });
@@ -81,7 +107,13 @@ async function refresh(): Promise<void> {
     return;
   }
   const matchId = currentMatchId;
-  if (!matchId || inFlight) return;
+  if (!matchId) return;
+  // Never drop a refresh on the floor: a click that lands mid-poll used to be
+  // silently ignored until the next tick, up to a minute away on backoff.
+  if (inFlight) {
+    queuedRefresh = true;
+    return;
+  }
   inFlight = true;
   try {
     const panel = ensureOverlay();
@@ -129,6 +161,10 @@ async function refresh(): Promise<void> {
     }
   } finally {
     inFlight = false;
+    if (queuedRefresh) {
+      queuedRefresh = false;
+      void refresh();
+    }
   }
 }
 
@@ -174,6 +210,7 @@ function startMatch(matchId: string): void {
   stopMatch();
   currentMatchId = matchId;
   swapped = false;
+  queuedRefresh = false;
   ensureOverlay();
   cardObserver = observeMapCards(
     () => latestStats,
