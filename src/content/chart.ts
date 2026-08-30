@@ -1,6 +1,5 @@
-import { shortLabel } from "../lib/maps";
-import { isThin, type ChartBadge } from "../lib/insights";
-import { displayWinRate, pickAdvantage } from "../lib/scoring";
+import { type ChartBadge } from "../lib/insights";
+import { formatScore, mapScore } from "../lib/score";
 import {
   DEFAULT_THEM_COLOR,
   DEFAULT_YOU_COLOR,
@@ -8,7 +7,7 @@ import {
   teamPalette,
   type TeamPalette,
 } from "../lib/team-colors";
-import type { TeamMapStat } from "../lib/types";
+import type { SmartSummary, TeamMapStat } from "../lib/types";
 
 export type ChartRow = {
   mapKey: string;
@@ -21,35 +20,30 @@ export type ChartRow = {
   thin?: boolean;
 };
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const WIDTH = 380;
+const ROW_H = 22;
+const PAD_TOP = 20;
+const PAD_BOTTOM = 6;
+const NAME_COL = 74;
+const BADGE_COL = 42;
+const LABEL_GAP = 24;
+
+function el<K extends keyof SVGElementTagNameMap>(
+  name: K,
+  attrs: Record<string, string | number>,
+): SVGElementTagNameMap[K] {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attrs)) {
+    node.setAttribute(key, String(value));
+  }
+  return node;
+}
+
 function pct(value: number | null): string {
   if (value == null) return "—";
   return `${Math.round(value * 100)}%`;
-}
-
-function barHeight(winRate: number | null, maxBar: number): number {
-  if (winRate == null) return 4;
-  return Math.max(4, winRate * maxBar);
-}
-
-function wrInBar(
-  group: SVGGElement,
-  x: number,
-  barTop: number,
-  barH: number,
-  rate: number | null,
-  thin: boolean,
-): void {
-  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  const inside = barH >= 16;
-  text.setAttribute("x", String(x));
-  text.setAttribute("y", String(inside ? barTop + 11 : barTop - 2));
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("fill", inside ? "#fff" : thin ? "#c90" : "#ddd");
-  text.setAttribute("font-size", "8");
-  text.setAttribute("font-weight", "800");
-  text.style.pointerEvents = "none";
-  text.textContent = pct(rate).replace("%", "");
-  group.append(text);
 }
 
 function badgeLabel(
@@ -62,139 +56,142 @@ function badgeLabel(
   return undefined;
 }
 
+/**
+ * One diverging bar per map: right in your colour when the edge score favours
+ * you, left in theirs when it does not. Deliberately not shaped like the old
+ * paired win-rate bars — this is a verdict, not a rate.
+ */
 export function renderChart(
   rows: ChartRow[],
   selectedMap: string | undefined,
   onSelect: (mapKey: string) => void,
-  adjust = false,
+  smart?: SmartSummary,
   colors: TeamPalette = teamPalette(DEFAULT_YOU_COLOR, DEFAULT_THEM_COLOR),
 ): SVGSVGElement {
-  const width = 380;
-  const height = 228;
-  const padLeft = 24;
-  const padBottom = 22;
-  const padTop = 36;
-  const plotH = height - padTop - padBottom;
-  const plotW = width - padLeft - 8;
-  const groupW = plotW / Math.max(rows.length, 1);
-  const barW = Math.min(18, Math.max(12, groupW * 0.36));
+  const height = PAD_TOP + rows.length * ROW_H + PAD_BOTTOM;
+  const plotW = WIDTH - NAME_COL - BADGE_COL;
+  const cx = NAME_COL + plotW / 2;
+  const halfBar = plotW / 2 - LABEL_GAP;
 
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("width", "100%");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", "Team map win rates");
+  const svg = el("svg", {
+    viewBox: `0 0 ${WIDTH} ${height}`,
+    width: "100%",
+    role: "img",
+    "aria-label": "Edge score per map",
+  });
 
-  const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  axis.setAttribute("x1", String(padLeft));
-  axis.setAttribute("x2", String(width - 4));
-  axis.setAttribute("y1", String(padTop + plotH));
-  axis.setAttribute("y2", String(padTop + plotH));
-  axis.setAttribute("stroke", "#444");
-  svg.append(axis);
-
-  for (const tick of [0, 0.5, 1]) {
-    const y = padTop + plotH - tick * plotH;
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("x", "2");
-    label.setAttribute("y", String(y + 3));
-    label.setAttribute("fill", "#888");
-    label.setAttribute("font-size", "9");
-    label.textContent = `${tick * 100}`;
-    svg.append(label);
+  // The scale is labelled on the axis itself, so "even" always sits exactly
+  // over the zero line no matter how wide the name column runs.
+  const axis: Array<[number, string, string, string]> = [
+    [cx - halfBar, "start", "#6b7380", "−100"],
+    [cx - 6, "end", colors.them, "them ◀"],
+    [cx + 6, "start", colors.you, "▶ you"],
+    [cx + halfBar, "end", "#6b7380", "+100"],
+  ];
+  for (const [x, anchor, fill, label] of axis) {
+    const text = el("text", {
+      x,
+      y: PAD_TOP - 8,
+      "text-anchor": anchor,
+      fill,
+      "font-size": 9,
+      "font-weight": 700,
+    });
+    text.textContent = label;
+    svg.append(text);
   }
 
+  svg.append(
+    el("line", {
+      x1: cx,
+      x2: cx,
+      y1: PAD_TOP - 4,
+      y2: height - PAD_BOTTOM + 2,
+      stroke: "#4a5160",
+      "stroke-width": 1,
+    }),
+  );
+
   rows.forEach((row, index) => {
-    const cx = padLeft + groupW * (index + 0.5);
-    const youRate = displayWinRate(row.you, adjust);
-    const themRate = displayWinRate(row.them, adjust);
-    const youH = barHeight(youRate, plotH);
-    const themH = barHeight(themRate, plotH);
+    const top = PAD_TOP + index * ROW_H;
+    const mid = top + ROW_H / 2;
+    const score = mapScore(row.you, row.them, row.mapKey, smart);
+    const thin = Boolean(row.thin);
     const selected = selectedMap === row.mapKey;
 
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const group = el("g", {});
     group.style.cursor = "pointer";
     if (row.dropped) group.setAttribute("opacity", "0.35");
     group.addEventListener("click", () => onSelect(row.mapKey));
 
     if (selected || row.picked) {
-      const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      bg.setAttribute("x", String(cx - groupW / 2 + 2));
-      bg.setAttribute("y", "4");
-      bg.setAttribute("width", String(groupW - 4));
-      bg.setAttribute("height", String(plotH + padTop + 12));
-      bg.setAttribute("fill", selected ? hexAlpha(colors.you, 0.12) : "rgba(255,255,255,0.04)");
-      bg.setAttribute("rx", "4");
-      group.append(bg);
+      group.append(
+        el("rect", {
+          x: 2,
+          y: top + 1,
+          width: WIDTH - 4,
+          height: ROW_H - 2,
+          fill: selected ? hexAlpha(colors.you, 0.12) : "rgba(255,255,255,0.04)",
+          rx: 4,
+        }),
+      );
     }
+
+    const name = el("text", {
+      x: NAME_COL - 10,
+      y: mid + 3,
+      "text-anchor": "end",
+      fill: "#ddd",
+      "font-size": 10,
+      "font-weight": 600,
+    });
+    name.textContent = row.displayName;
+    group.append(name);
+
+    const width = Math.max(2, (Math.abs(score) / 100) * halfBar);
+    const positive = score >= 0;
+    const fill = positive ? colors.you : colors.them;
+    const bar = el("rect", {
+      x: positive ? cx : cx - width,
+      y: mid - 5,
+      width,
+      height: 10,
+      fill,
+      rx: 2,
+    });
+    if (thin) bar.setAttribute("opacity", "0.4");
+    group.append(bar);
+
+    const value = el("text", {
+      x: positive ? cx + width + 5 : cx - width - 5,
+      y: mid + 3,
+      "text-anchor": positive ? "start" : "end",
+      fill: thin ? "#8d94a2" : fill,
+      "font-size": 10,
+      "font-weight": 800,
+    });
+    value.style.pointerEvents = "none";
+    value.textContent = formatScore(score);
+    group.append(value);
 
     const meta = row.badge ? badgeLabel(row.badge, colors) : undefined;
     if (meta) {
-      const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      tag.setAttribute("x", String(cx));
-      tag.setAttribute("y", "12");
-      tag.setAttribute("text-anchor", "middle");
-      tag.setAttribute("font-size", "8");
-      tag.setAttribute("font-weight", "800");
-      tag.setAttribute("letter-spacing", "0.04em");
-      tag.setAttribute("fill", meta.fill);
+      const tag = el("text", {
+        x: WIDTH - 4,
+        y: mid + 3,
+        "text-anchor": "end",
+        "font-size": 8,
+        "font-weight": 800,
+        "letter-spacing": "0.04em",
+        fill: meta.fill,
+      });
       tag.textContent = meta.text;
       group.append(tag);
     }
 
-    const youBar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    youBar.setAttribute("x", String(cx - barW - 2));
-    youBar.setAttribute("y", String(padTop + plotH - youH));
-    youBar.setAttribute("width", String(barW));
-    youBar.setAttribute("height", String(youH));
-    youBar.setAttribute("fill", colors.you);
-    youBar.setAttribute("rx", "2");
-    if (!row.dropped && isThin(row.you)) youBar.setAttribute("opacity", "0.4");
-    group.append(youBar);
-
-    const themBar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    themBar.setAttribute("x", String(cx + 2));
-    themBar.setAttribute("y", String(padTop + plotH - themH));
-    themBar.setAttribute("width", String(barW));
-    themBar.setAttribute("height", String(themH));
-    themBar.setAttribute("fill", colors.them);
-    themBar.setAttribute("rx", "2");
-    if (!row.dropped && isThin(row.them)) themBar.setAttribute("opacity", "0.4");
-    group.append(themBar);
-
-    wrInBar(group, cx - barW / 2 - 2, padTop + plotH - youH, youH, youRate, !row.dropped && isThin(row.you));
-    wrInBar(group, cx + 2 + barW / 2, padTop + plotH - themH, themH, themRate, !row.dropped && isThin(row.them));
-
-    const delta =
-      youRate != null && themRate != null
-        ? pickAdvantage(row.you, row.them, adjust)
-        : null;
-    if (delta != null) {
-      const deltaText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      deltaText.setAttribute("x", String(cx));
-      deltaText.setAttribute("y", String(padTop - 6));
-      deltaText.setAttribute("text-anchor", "middle");
-      deltaText.setAttribute("font-size", "9");
-      deltaText.setAttribute("font-weight", "700");
-      deltaText.setAttribute("fill", delta >= 0 ? "#7dce7d" : "#e07070");
-      const rounded = Math.round(delta * 100);
-      deltaText.textContent = `${rounded > 0 ? "+" : ""}${rounded}%`;
-      group.append(deltaText);
-    }
-
-    const name = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    name.setAttribute("x", String(cx));
-    name.setAttribute("y", String(height - 7));
-    name.setAttribute("text-anchor", "middle");
-    name.setAttribute("fill", "#ddd");
-    name.setAttribute("font-size", "9");
-    name.setAttribute("font-weight", "600");
-    name.textContent = shortLabel(row.displayName);
-    group.append(name);
-
-    const youLabel = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    youLabel.textContent = `${row.displayName}: you ${pct(row.you.winRate)} (${row.you.games})${adjust ? ` adj ${pct(youRate)}` : ""}, them ${pct(row.them.winRate)} (${row.them.games})${adjust ? ` adj ${pct(themRate)}` : ""}`;
-    group.append(youLabel);
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = `${row.displayName}: score ${formatScore(score)} · raw win rate you ${pct(row.you.winRate)} (${row.you.games}), them ${pct(row.them.winRate)} (${row.them.games})`;
+    group.append(title);
 
     svg.append(group);
   });
@@ -202,6 +199,7 @@ export function renderChart(
   return svg;
 }
 
+/** Raw last-30 win rate with its game count — the breakdown's evidence line. */
 export function formatChip(stat: TeamMapStat): string {
   if (stat.winRate == null) return `— (0)`;
   return `${Math.round(stat.winRate * 100)}% (${stat.games})`;

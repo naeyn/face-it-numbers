@@ -1,6 +1,5 @@
 import { OUTLIER_GAP, OUTLIER_MIN_GAMES, STACK_MIN_PLAYERS, THIN_MEAN_GAMES } from "./constants";
-import { pickAdvantage } from "./scoring";
-import { smartAdvantage } from "./calibration";
+import { mapEdge } from "./score";
 import { sameMatchId } from "./game-labels";
 import type { HistoryGame, PlayerMapStat, SmartSummary, TeamMapStat } from "./types";
 
@@ -111,17 +110,12 @@ export function suggestBanPick(
     you: TeamMapStat;
     them: TeamMapStat;
   }>,
-  adjust: boolean,
   smart?: SmartSummary,
 ): { ban?: string; pick?: string } {
   if (remaining.length === 0) return {};
   const scored = remaining.map((row) => ({
     name: row.displayName,
-    score: smartAdvantage(
-      pickAdvantage(row.you, row.them, adjust),
-      row.mapKey,
-      smart,
-    ),
+    score: mapEdge(row.you, row.them, row.mapKey, smart),
   }));
   scored.sort((a, b) => b.score - a.score);
   const pick = scored[0]?.name;
@@ -133,7 +127,6 @@ export function suggestBanPick(
 export function badgeForMap(
   row: { mapKey: string; you: TeamMapStat; them: TeamMapStat; dropped: boolean },
   remaining: Array<{ mapKey: string; you: TeamMapStat; them: TeamMapStat }>,
-  adjust: boolean,
   smart?: SmartSummary,
 ): ChartBadge | undefined {
   if (row.dropped) {
@@ -143,11 +136,7 @@ export function badgeForMap(
 
   const scores = remaining.map((item) => ({
     mapKey: item.mapKey,
-    score: smartAdvantage(
-      pickAdvantage(item.you, item.them, adjust),
-      item.mapKey,
-      smart,
-    ),
+    score: mapEdge(item.you, item.them, item.mapKey, smart),
     youThin: isThin(item.you),
     themThin: isThin(item.them),
     youWr: item.you.winRate ?? 0,

@@ -10,7 +10,6 @@ export const LEGACY_PREFS_KEY = "finViewPrefs";
 
 export type FeatureKey =
   | "sortBest"
-  | "adjust"
   | "suggestBanPick"
   | "permLabels"
   | "thinSample"
@@ -34,7 +33,6 @@ export type FeatureSettings = Record<FeatureKey, boolean> & {
 
 export const DEFAULT_SETTINGS: FeatureSettings = {
   sortBest: true,
-  adjust: true,
   suggestBanPick: true,
   permLabels: true,
   thinSample: true,
@@ -59,13 +57,12 @@ export const FEATURE_GROUPS: {
   items: { key: FeatureKey; label: string; hint: string }[];
 }[] = [
   {
-    title: "Chart",
+    title: "Edge score",
     items: [
-      { key: "sortBest", label: "Sort best pick first", hint: "Left = your best map; banned maps stay faded in place" },
-      { key: "adjust", label: "Shrink tiny samples", hint: "Pull low-game WRs toward 50%" },
-      { key: "suggestBanPick", label: "Ban / pick suggestion", hint: "One line under the chart" },
-      { key: "permLabels", label: "Perm / ban labels", hint: "BAN / PERM / THEIRS above the win-rate gap" },
-      { key: "thinSample", label: "Thin-sample warning", hint: "Fade a side with fewer than 5 games on that map" },
+      { key: "sortBest", label: "Sort best pick first", hint: "Top = your best map; banned maps stay faded in place" },
+      { key: "suggestBanPick", label: "Ban / pick suggestion", hint: "One line under the score chart" },
+      { key: "permLabels", label: "Perm / ban labels", hint: "BAN / PERM / THEIRS next to the score" },
+      { key: "thinSample", label: "Thin-sample warning", hint: "Fade a map neither side has played much" },
     ],
   },
   {
@@ -86,8 +83,8 @@ export const FEATURE_GROUPS: {
       },
       {
         key: "smartPick",
-        label: "Smart pick",
-        hint: "Calibrates from your finished lobbies, then biases ban/pick toward maps you actually convert",
+        label: "Result calibration",
+        hint: "Folds your finished-lobby results into the edge score, so maps you actually convert score higher",
       },
     ],
   },
@@ -139,12 +136,9 @@ export async function loadSettings(): Promise<FeatureSettings> {
     const stored = await chrome.storage.local.get([SETTINGS_KEY, LEGACY_PREFS_KEY]);
     if (stored[SETTINGS_KEY] != null) return mergeSettings(stored[SETTINGS_KEY]);
     const merged = mergeSettings(undefined);
-    const legacy = stored[LEGACY_PREFS_KEY] as
-      | { sortBest?: boolean; adjust?: boolean }
-      | undefined;
-    if (legacy) {
-      if (typeof legacy.sortBest === "boolean") merged.sortBest = legacy.sortBest;
-      if (typeof legacy.adjust === "boolean") merged.adjust = legacy.adjust;
+    const legacy = stored[LEGACY_PREFS_KEY] as { sortBest?: boolean } | undefined;
+    if (legacy && typeof legacy.sortBest === "boolean") {
+      merged.sortBest = legacy.sortBest;
     }
     return merged;
   } catch (error) {

@@ -21,12 +21,14 @@ import {
   type BriefPlayer,
   type TeamBrief,
 } from "../lib/briefing";
+import { SHRINK_PRIOR } from "../lib/scoring";
 import {
-  displayWinRate,
-  pickAdvantage,
-  playerDisplayWinRate,
-} from "../lib/scoring";
-import { smartAdvantage } from "../lib/calibration";
+  calibrationEdge,
+  formatScore,
+  mapEdge,
+  mapScore,
+  SCORE_SCALE,
+} from "../lib/score";
 import type { LobbyStats, PlayerMapStat, TeamInsight, TeamMapStat } from "../lib/types";
 import { formatChip, renderChart, type ChartRow } from "./chart";
 import { overlayStyles } from "./overlay-styles";
@@ -60,6 +62,7 @@ export class Overlay {
   private settings: FeatureSettings = { ...DEFAULT_SETTINGS };
   private latestStats: LobbyStats | undefined;
   private tab: "veto" | "brief" = "veto";
+  private explain = false;
   private autoBriefed = false;
   private briefMap: string | undefined;
   private callbacks: OverlayCallbacks;
@@ -90,7 +93,8 @@ export class Overlay {
     this.header = document.createElement("div");
     this.header.className = "header";
     this.header.innerHTML = `
-      <div class="title"><span>Faceit Numbers</span> · last 30</div>
+      <div class="title"><span>Faceit Numbers</span> · edge score</div>
+      <button type="button" data-action="sort" title="Sort remaining maps from your best pick to worst">Best pick</button>
       <button type="button" data-action="swap">Swap teams</button>
       <button type="button" data-action="collapse" aria-label="Collapse">−</button>
     `;
@@ -119,8 +123,11 @@ export class Overlay {
       if (action === "swap") this.callbacks.onSwap();
       else if (action === "collapse") this.toggleCollapsed();
       else if (action === "sort") void this.toggleSetting("sortBest");
-      else if (action === "adjust") void this.toggleSetting("adjust");
-      else if (action === "tab-veto" && this.latestStats) {
+      else if (action === "explain" && this.latestStats) {
+        this.explain = !this.explain;
+        this.paintKey = "";
+        this.render(this.latestStats);
+      } else if (action === "tab-veto" && this.latestStats) {
         this.tab = "veto";
         this.paintKey = "";
         this.render(this.latestStats);
@@ -215,10 +222,22 @@ export class Overlay {
     if (key === this.paintKey) return;
     this.paintKey = key;
 
+    this.syncSortButton();
     this.body.replaceChildren();
     if (canBrief) this.body.append(this.renderTabs());
     if (this.tab === "brief" && canBrief) this.renderBrief(stats);
     else this.renderVeto(stats);
+  }
+
+  // Lives in the header, which is painted once, so it needs an explicit sync.
+  private syncSortButton(): void {
+    const button = this.header.querySelector<HTMLButtonElement>(
+      '[data-action="sort"]',
+    );
+    if (!button) return;
+    button.classList.toggle("on", this.settings.sortBest);
+    button.setAttribute("aria-pressed", String(this.settings.sortBest));
+    button.style.display = this.tab === "brief" ? "none" : "";
   }
 
   private signature(stats: LobbyStats, canBrief: boolean): string {
@@ -239,6 +258,7 @@ export class Overlay {
       this.briefMap ?? "",
       this.selectedMap ?? "",
       String(canBrief),
+      String(this.explain),
       JSON.stringify(this.settings),
       maps,
       adr,
@@ -283,7 +303,7 @@ export class Overlay {
     const tabs = document.createElement("div");
     tabs.className = "tabs";
     tabs.append(
-      this.tabButton("tab-veto", "Veto", this.tab === "veto"),
+      this.tabButton("tab-veto", "Edge", this.tab === "veto"),
       this.tabButton("tab-brief", "Brief", this.tab === "brief"),
     );
     return tabs;
@@ -319,52 +339,20 @@ export class Overlay {
     const remaining = rows.filter((row) => !row.dropped && !row.picked);
     const smart = this.settings.smartPick ? stats.smart : undefined;
     const byPick = (a: ChartRow, b: ChartRow) =>
-      smartAdvantage(
-        pickAdvantage(b.you, b.them, this.settings.adjust),
-        b.mapKey,
-        smart,
-      ) -
-      smartAdvantage(
-        pickAdvantage(a.you, a.them, this.settings.adjust),
-        a.mapKey,
-        smart,
-      );
+      mapEdge(b.you, b.them, b.mapKey, smart) -
+      mapEdge(a.you, a.them, a.mapKey, smart);
     const ordered = this.settings.sortBest ? [...rows].sort(byPick) : rows;
 
     for (const row of ordered) {
       row.thin = this.settings.thinSample && (isThin(row.you) || isThin(row.them));
-      const badge = badgeForMap(row, remaining, this.settings.adjust, smart);
+      const badge = badgeForMap(row, remaining, smart);
       if (badge && badge !== "thin") {
         row.badge = this.settings.permLabels ? badge : undefined;
       }
     }
 
-    const legend = document.createElement("div");
-    legend.className = "legend";
-    const keys = document.createElement("div");
-    keys.className = "keys";
-    keys.innerHTML = `
-      <span><i class="swatch" style="background:${this.settings.youColor}"></i>You</span>
-      <span><i class="swatch" style="background:${this.settings.themColor}"></i>Them</span>
-    `;
-    const toggles = document.createElement("div");
-    toggles.className = "toggles";
-    toggles.append(
-      this.toggleButton(
-        "sort",
-        "Best pick",
-        this.settings.sortBest,
-        "Sort remaining maps from your best pick to worst",
-      ),
-      this.toggleButton(
-        "adjust",
-        "Shrink WR",
-        this.settings.adjust,
-        "Pull tiny samples toward 50% so a 2-game 100% is not treated as a perm",
-      ),
-    );
-    legend.append(keys, toggles);
-    this.body.append(legend);
+    this.body.append(this.renderCaption());
+    if (this.explain) this.body.append(this.renderExplain(stats));
 
     const context = this.renderContext(stats);
     if (context) this.body.append(context);
@@ -377,14 +365,14 @@ export class Overlay {
         this.selectedMap = this.selectedMap === mapKey ? undefined : mapKey;
         this.render(stats);
       },
-      this.settings.adjust,
+      smart,
       teamPalette(this.settings.youColor, this.settings.themColor),
     );
     chartMount.append(svg);
     this.body.append(chartMount);
 
     if (this.settings.suggestBanPick) {
-      const suggestion = suggestBanPick(remaining, this.settings.adjust, smart);
+      const suggestion = suggestBanPick(remaining, smart);
       if (suggestion.ban || suggestion.pick) {
         const line = document.createElement("div");
         line.className = "suggest";
@@ -407,23 +395,23 @@ export class Overlay {
       if (!info || !info.ready) {
         const n = info?.n ?? 0;
         const needed = info?.needed ?? 8;
-        smartLine.textContent = `Smart pick calibrating ${n}/${needed}`;
+        smartLine.textContent = `Score calibrating ${n}/${needed} lobbies`;
         this.bindHover(
           smartLine,
-          "Smart pick",
-          "After 8 finished lobbies, ban/pick uses your actual results vs last-30 WR — maps you convert more often get a boost.",
+          "Result calibration",
+          `After ${needed} finished lobbies the score also folds in your own results — maps you convert more often than the numbers predicted gain points.`,
         );
       } else {
         const rate =
           info.decided > 0
-            ? `${Math.round((info.hits / info.decided) * 100)}% last-30`
-            : `${info.n} matches`;
+            ? `matched ${info.hits}/${info.decided}`
+            : `${info.n} lobbies`;
         smartLine.classList.add("ready");
-        smartLine.textContent = `Smart pick live · ${rate}`;
+        smartLine.textContent = `Score calibrated · ${rate}`;
         this.bindHover(
           smartLine,
-          "Smart pick live",
-          `${info.hits}/${info.decided || info.n} times the last-30 edge matched the result. Ban/pick is now biased toward maps you actually win.`,
+          "Result calibration on",
+          `${info.hits}/${info.decided || info.n} times the edge pointed at the winner. Your own results now move every score above.`,
         );
       }
       this.body.append(smartLine);
@@ -446,7 +434,7 @@ export class Overlay {
       (this.briefMap && maps.includes(this.briefMap) ? this.briefMap : maps[0]) ??
       "";
     this.briefMap = mapKey;
-    const briefing = buildBriefing(stats, mapKey, this.settings.adjust);
+    const briefing = buildBriefing(stats, mapKey, this.settings.smartPick ? stats.smart : undefined);
     if (!briefing) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -475,11 +463,15 @@ export class Overlay {
     head.className = "brief-head";
     const edge = document.createElement("div");
     edge.className = `brief-edge ${briefing.lean}`;
-    const signed = `${briefing.gap >= 0 ? "+" : ""}${Math.round(briefing.gap * 100)}%`;
     edge.textContent = briefing.headline;
     const gap = document.createElement("div");
     gap.className = "brief-gap";
-    gap.textContent = `${signed} WR`;
+    gap.textContent = `score ${formatScore(briefing.score)}`;
+    this.bindHover(
+      gap,
+      "Edge score",
+      "The panel's processed verdict for this map. Everything below is raw last-30 data.",
+    );
     head.append(edge, gap);
     this.body.append(head);
 
@@ -618,6 +610,60 @@ export class Overlay {
     return col;
   }
 
+  /** Permanent, non-hover copy: what the number above is, and what it is not. */
+  private renderCaption(): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "caption";
+    const text = document.createElement("span");
+    text.textContent =
+      "Score, not win rate — last-30 results adjusted for sample size and your own record. Raw win rates sit on the map rows.";
+    const help = document.createElement("button");
+    help.type = "button";
+    help.className = `help${this.explain ? " on" : ""}`;
+    help.dataset.action = "explain";
+    help.textContent = "?";
+    help.setAttribute("aria-label", "How the edge score works");
+    help.setAttribute("aria-expanded", String(this.explain));
+    el.append(text, help);
+    return el;
+  }
+
+  /** The decoder. Opens in place above the chart so both can be read at once. */
+  private renderExplain(stats: LobbyStats): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "explain";
+    const smart = this.settings.smartPick ? stats.smart : undefined;
+    const mapName = this.selectedMap
+      ? stats.maps.find((entity) => entity.class_name === this.selectedMap)?.name
+      : undefined;
+
+    let live: string;
+    if (!this.settings.smartPick) {
+      live = "Step 3 is off — turn on Result calibration in the toolbar menu.";
+    } else if (!smart?.ready) {
+      live = `Step 3 is still counting: ${smart?.n ?? 0} of ${smart?.needed ?? 8} finished lobbies recorded.`;
+    } else if (this.selectedMap && mapName) {
+      const points = Math.round(calibrationEdge(this.selectedMap, smart) * SCORE_SCALE);
+      live = points === 0
+        ? `Step 3 is live over ${smart.n} lobbies, but ${mapName} has no correction of its own yet.`
+        : `Step 3 is live: ${mapName} is worth ${formatScore(points)} versus your own average, over ${smart.n} lobbies.`;
+    } else {
+      live = `Step 3 is live over ${smart.n} lobbies. Click a map to see its correction.`;
+    }
+
+    el.innerHTML = `
+      <p class="lede"><b>+26</b> means your side is 26 points ahead on that map once the numbers are processed. <b>0</b> is even.</p>
+      <ol>
+        <li><b>Last-30 win rates.</b> Every game both rosters played on the map, pooled across the five players.</li>
+        <li><b>Sample-size shrink.</b> Thin samples are pulled toward even — worth ${SHRINK_PRIOR} phantom coin-flip games — so a 2-game 100% cannot outrank a 20-game 65%.</li>
+        <li><b>Your calibration.</b> Maps you convert better than <i>your own</i> average gain points, maps you convert worse lose them. How you are doing overall never moves the score — only the difference between maps does.</li>
+      </ol>
+      <p class="live">${escapeHtml(live)}</p>
+      <p class="fine">Unprocessed win rates are the numbers on the map rows — this panel never shows those.</p>
+    `;
+    return el;
+  }
+
   private renderBreakdown(row: ChartRow, stats: LobbyStats): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "breakdown";
@@ -626,7 +672,7 @@ export class Overlay {
       this.settings.captainDrops && drop?.rate != null
         ? ` · captain drop ${Math.round(drop.rate * 100)}%`
         : "";
-    wrap.innerHTML = `<h2>${escapeHtml(row.displayName)} · you ${formatChip(row.you)} · them ${formatChip(row.them)}${dropText}</h2>`;
+    wrap.innerHTML = `<h2>${escapeHtml(row.displayName)} <span class="raw">raw win rate</span> you ${formatChip(row.you)} · them ${formatChip(row.them)}${dropText}</h2>`;
 
     const cols = document.createElement("div");
     cols.className = "cols";
@@ -743,13 +789,6 @@ export class Overlay {
       row.className = "player";
       if (outlier && outlier.playerId === player.playerId) row.classList.add("drag");
 
-      const shown = playerDisplayWinRate(
-        player.wins,
-        player.games,
-        player.winRate,
-        this.settings.adjust,
-      );
-
       const name = document.createElement("span");
       name.className = "name";
       name.textContent = player.nickname;
@@ -757,7 +796,7 @@ export class Overlay {
 
       const wr = document.createElement("span");
       wr.className = "wr";
-      wr.innerHTML = `${pct(shown)}<small>(${player.games})</small>`;
+      wr.innerHTML = `${pct(player.winRate)}<small>(${player.games})</small>`;
 
       row.append(name, wr);
 
@@ -791,24 +830,9 @@ export class Overlay {
     return col;
   }
 
-  private toggleButton(
-    action: string,
-    label: string,
-    on: boolean,
-    title: string,
-  ): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.action = action;
-    button.textContent = label;
-    button.title = title;
-    if (on) button.classList.add("on");
-    return button;
-  }
-
   private toggling = false;
 
-  private async toggleSetting(key: "sortBest" | "adjust"): Promise<void> {
+  private async toggleSetting(key: "sortBest"): Promise<void> {
     if (this.toggling) return;
     this.toggling = true;
     const next = { ...this.settings, [key]: !this.settings[key] };
@@ -845,11 +869,11 @@ export class Overlay {
     el.className = "onboard";
     el.innerHTML = `
       <h2>Welcome to <span>Faceit Numbers</span></h2>
-      <p>During map veto this panel compares both teams' win rates per map, built from each player's last 30 Faceit matches.</p>
+      <p>Two different things, on purpose:</p>
       <ul>
-        <li>Drag the header to move the panel; click a map's bars for per-player details.</li>
-        <li>Hit <b>Swap teams</b> if the sides look reversed.</li>
-        <li>Extras — pre-match briefing, performance labels, smart pick — live in the toolbar icon menu.</li>
+        <li>This panel shows an <b>edge score</b> per map — a processed verdict, not a win rate. The <b>?</b> next to it decodes how it is built.</li>
+        <li>The map rows on the page show the <b>raw win rates</b> from each player's last 30 Faceit matches, untouched.</li>
+        <li>Drag the header to move the panel; click a map for per-player raw numbers. Hit <b>Swap teams</b> if the sides look reversed.</li>
       </ul>
       <p class="fine">Stats are read through your logged-in Faceit session. Requests go only to faceit.com — nothing is collected or sent anywhere else.</p>
       <div class="actions">

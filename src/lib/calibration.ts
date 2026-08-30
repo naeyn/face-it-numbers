@@ -63,15 +63,6 @@ export function summarizeSmart(samples: SmartSample[]): SmartSummary {
   };
 }
 
-export function smartAdvantage(
-  gap: number,
-  mapKey: string,
-  smart: SmartSummary | undefined,
-): number {
-  if (!smart?.ready) return gap;
-  return gap + (smart.bias[mapKey] ?? smart.biasGlobal);
-}
-
 async function readStore(): Promise<SmartStore> {
   if (!extensionAlive()) return { samples: [] };
   try {
@@ -114,7 +105,7 @@ export async function absorbSmart(stats: LobbyStats): Promise<SmartSummary> {
       store.samples.unshift({
         matchId: stats.matchId,
         mapKey,
-        gap: pickAdvantage(you, them, true),
+        gap: pickAdvantage(you, them),
         won: stats.youWon,
         at: Date.now(),
       });

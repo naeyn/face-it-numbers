@@ -1,7 +1,6 @@
 import { pickedMapKeys } from "../lib/briefing";
 import { isThin } from "../lib/insights";
 import { KNOWN_MAPS, restrictLobbyMaps } from "../lib/maps";
-import { pickAdvantage } from "../lib/scoring";
 import { loadSettings } from "../lib/settings";
 import { applyTeamColors } from "../lib/team-colors";
 import type { LobbyStats, MapEntity, TeamMapStat } from "../lib/types";
@@ -66,6 +65,13 @@ const CHIP_CSS = `
 .fin-map-chip .fin-you { color: var(--fin-you-soft, #9ec1ff); }
 .fin-map-chip .fin-them { color: var(--fin-them-soft, #ffb086); }
 .fin-map-chip .fin-sep { color: #6b7380; font-weight: 500; }
+.fin-map-chip .fin-tag {
+  margin-right: 1px;
+  color: #6b7380;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
 `;
 
 function ensureStyle(): void {
@@ -82,15 +88,16 @@ function wrOnly(stat: TeamMapStat): string {
 }
 
 function chipHtml(you: TeamMapStat, them: TeamMapStat): string {
-  return `<span class="fin-you">${wrOnly(you)}</span><span class="fin-sep">·</span><span class="fin-them">${wrOnly(them)}</span>`;
+  return `<span class="fin-tag">WR</span><span class="fin-you">${wrOnly(you)}</span><span class="fin-sep">·</span><span class="fin-them">${wrOnly(them)}</span>`;
 }
 
-function chipLean(
-  you: TeamMapStat,
-  them: TeamMapStat,
-  adjust: boolean,
-): "you" | "them" | "even" {
-  const gap = pickAdvantage(you, them, adjust);
+/**
+ * Tinted off the raw gap, not the shrunk one, so the colour can never point
+ * the other way to the two numbers printed beside it. The processed view is
+ * the overlay's edge score and lives only there.
+ */
+function chipLean(you: TeamMapStat, them: TeamMapStat): "you" | "them" | "even" {
+  const gap = (you.winRate ?? 0.5) - (them.winRate ?? 0.5);
   if (gap >= 0.05) return "you";
   if (gap <= -0.05) return "them";
   return "even";
@@ -330,7 +337,7 @@ export async function injectMapCards(stats: LobbyStats): Promise<void> {
       row,
       mapKey,
       chipHtml(you, them),
-      chipClassName(chipLean(you, them, settings.adjust), thin),
+      chipClassName(chipLean(you, them), thin),
       gutter,
     );
   }
