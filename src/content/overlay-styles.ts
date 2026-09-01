@@ -67,6 +67,14 @@ button.on {
   background: #ff55001f;
 }
 
+/* The side is a guess: dashed, not alarming — it is a prompt to check, and
+   half the time the guess is right. */
+button.warn {
+  border-style: dashed;
+  border-color: #c8a13a;
+  color: #f0d489;
+}
+
 .notice {
   padding: 4px 10px;
   font-size: 11px;

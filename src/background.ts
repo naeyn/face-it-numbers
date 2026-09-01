@@ -21,7 +21,12 @@ import {
   SAMPLE_LIMIT,
 } from "./lib/constants";
 import { FaceitApiError, faceitGet, mapPool } from "./lib/faceit-api";
-import { nicknameFromPayload, nicknameFromToken } from "./lib/session-user";
+import {
+  nicknameFromPayload,
+  nicknameFromToken,
+  userIdFromPayload,
+  userIdFromToken,
+} from "./lib/session-user";
 import {
   DEFAULT_CS2_POOL,
   KNOWN_MAPS,
@@ -50,7 +55,12 @@ type CacheEntry = {
 
 const playerCache = new Map<string, CacheEntry>();
 const histCache = new Map<string, CacheEntry>();
-let sessionNickCache: { token: string; nick: string; at: number } | undefined;
+// Who the browser is logged in as. The nickname is what the panel shows; the
+// player_id is what decides the side.
+type Identity = { nickname?: string; playerId?: string };
+
+const IDENTITY_KEY = "finIdentity";
+let sessionIdentityCache: { token: string; identity: Identity; at: number } | undefined;
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, _sender, sendResponse) => {
@@ -63,7 +73,7 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "GET_LOBBY_STATS") {
       void getLobbyStats(
         message.matchId,
-        message.myNickname,
+        { nickname: message.myNickname, playerId: message.myPlayerId },
         message.swapped,
         message.token,
       )
@@ -103,14 +113,14 @@ async function resolveToken(fromPage?: string): Promise<string | undefined> {
 
 async function getLobbyStats(
   matchId: string,
-  myNickname: string | undefined,
+  fromPage: Identity,
   swapped: boolean | undefined,
   pageToken: string | undefined,
 ): Promise<LobbyStatsResponse> {
   const token = await resolveToken(pageToken);
-  const [match, tokenNickname] = await Promise.all([
+  const [match, session] = await Promise.all([
     fetchMatch(matchId, token),
-    resolveSessionNickname(token),
+    resolveSessionIdentity(token),
   ]);
   const faction1 = match.teams?.faction1?.roster ?? [];
   const faction2 = match.teams?.faction2?.roster ?? [];
@@ -123,13 +133,17 @@ async function getLobbyStats(
   );
 
   const roster = [...faction1, ...faction2];
-  const sessionNickname = pickRosterNickname(tokenNickname, myNickname, faction1, faction2);
-  const myFaction = resolveMyFaction(
-    faction1,
-    faction2,
-    sessionNickname,
-    swapped ?? false,
-  );
+  // Session first — it comes from the logged-in token — then whatever the page
+  // could read, then whoever we resolved last time, which is all that is left
+  // once Faceit stops answering /sessions/me.
+  const identities = [session, fromPage, await lastKnownIdentity()];
+  const me = identifyMe(faction1, faction2, identities);
+  const myFaction = applySwap(me.faction, swapped ?? false);
+  // A manual swap is the user telling us the side; nothing left to flag.
+  const myFactionKnown = me.known || (swapped ?? false);
+  const sessionNickname =
+    me.player?.nickname ??
+    pickRosterNickname(session.nickname, fromPage.nickname, faction1, faction2);
   const youRoster = myFaction === "faction1" ? faction1 : faction2;
   const themRoster = myFaction === "faction1" ? faction2 : faction1;
   const enemyCaptain =
@@ -220,6 +234,7 @@ async function getLobbyStats(
     status: match.status ?? "",
     myNickname: sessionNickname,
     myFaction,
+    myFactionKnown,
     you: {
       faction: myFaction,
       name:
@@ -252,20 +267,65 @@ async function getLobbyStats(
   return { ok: true, data };
 }
 
-async function resolveSessionNickname(token: string | undefined): Promise<string | undefined> {
-  if (!token) return undefined;
-  const fromJwt = nicknameFromToken(token);
-  if (fromJwt) return fromJwt;
-  if (
-    sessionNickCache &&
-    sessionNickCache.token === token &&
-    Date.now() - sessionNickCache.at < CACHE_TTL_MS
-  ) {
-    return sessionNickCache.nick;
+async function resolveSessionIdentity(token: string | undefined): Promise<Identity> {
+  if (!token) return {};
+  const fromJwt: Identity = {
+    nickname: nicknameFromToken(token),
+    playerId: userIdFromToken(token),
+  };
+  if (fromJwt.nickname && fromJwt.playerId) {
+    void rememberIdentity(fromJwt);
+    return fromJwt;
   }
-  const nick = await fetchSessionNickname(token);
-  if (nick) sessionNickCache = { token, nick, at: Date.now() };
-  return nick;
+  if (
+    sessionIdentityCache &&
+    sessionIdentityCache.token === token &&
+    Date.now() - sessionIdentityCache.at < CACHE_TTL_MS
+  ) {
+    return merge(fromJwt, sessionIdentityCache.identity);
+  }
+  const fetched = await fetchSessionIdentity(token);
+  const identity = merge(fromJwt, fetched);
+  if (fetched.nickname || fetched.playerId) {
+    sessionIdentityCache = { token, identity, at: Date.now() };
+  }
+  void rememberIdentity(identity);
+  return identity;
+}
+
+function merge(primary: Identity, fallback: Identity): Identity {
+  return {
+    nickname: primary.nickname ?? fallback.nickname,
+    playerId: primary.playerId ?? fallback.playerId,
+  };
+}
+
+/**
+ * The service worker is torn down between polls, so the in-memory cache above
+ * is usually cold. Keeping the last resolved account on disk means a lobby
+ * opened while /sessions/me is rate limiting still lands on the right side
+ * instead of silently defaulting to faction1.
+ */
+async function rememberIdentity(identity: Identity): Promise<void> {
+  if (!identity.playerId && !identity.nickname) return;
+  try {
+    await chrome.storage.local.set({ [IDENTITY_KEY]: identity });
+  } catch {
+    // Best effort: a failed write only costs us the fallback.
+  }
+}
+
+async function lastKnownIdentity(): Promise<Identity> {
+  try {
+    const stored = await chrome.storage.local.get(IDENTITY_KEY);
+    const value = stored[IDENTITY_KEY] as unknown;
+    return {
+      nickname: nicknameFromPayload(value),
+      playerId: userIdFromPayload(value),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function pickRosterNickname(
@@ -283,11 +343,15 @@ function pickRosterNickname(
   return session ?? hint;
 }
 
-async function fetchSessionNickname(token: string): Promise<string | undefined> {
+async function fetchSessionIdentity(token: string): Promise<Identity> {
   try {
-    return nicknameFromPayload(await faceitGet("/users/v1/sessions/me", token));
+    const payload = await faceitGet("/users/v1/sessions/me", token);
+    return {
+      nickname: nicknameFromPayload(payload),
+      playerId: userIdFromPayload(payload),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -485,19 +549,51 @@ function rosterHas(roster: RosterPlayer[], nickname: string): boolean {
   return roster.some((player) => nicknamesEqual(player.nickname, nickname));
 }
 
-function resolveMyFaction(
+function findById(roster: RosterPlayer[], playerId: string): RosterPlayer | undefined {
+  const id = playerId.trim().toLowerCase();
+  return roster.find((player) => player.player_id?.trim().toLowerCase() === id);
+}
+
+function findByNick(roster: RosterPlayer[], nickname: string): RosterPlayer | undefined {
+  return roster.find((player) => nicknamesEqual(player.nickname, nickname));
+}
+
+type Me = { faction: FactionId; player?: RosterPlayer; known: boolean };
+
+/**
+ * Every id is tried before any nickname: an id hit is proof, while a nickname
+ * hit is a display-name comparison that a rename or a lookalike can defeat.
+ * Falling through to faction1 is a guess, and `known` says so, so the panel
+ * can flag it instead of quietly showing the enemy team as yours.
+ */
+function identifyMe(
   faction1: RosterPlayer[],
   faction2: RosterPlayer[],
-  myNickname: string | undefined,
-  swapped: boolean,
-): FactionId {
-  let faction: FactionId = "faction1";
-  if (myNickname) {
-    if (rosterHas(faction1, myNickname)) faction = "faction1";
-    else if (rosterHas(faction2, myNickname)) faction = "faction2";
+  candidates: Identity[],
+): Me {
+  const passes: Array<{
+    value: (identity: Identity) => string | undefined;
+    find: (roster: RosterPlayer[], value: string) => RosterPlayer | undefined;
+  }> = [
+    { value: (identity) => identity.playerId, find: findById },
+    { value: (identity) => identity.nickname, find: findByNick },
+  ];
+  for (const pass of passes) {
+    for (const candidate of candidates) {
+      const value = pass.value(candidate);
+      if (!value) continue;
+      const mine = pass.find(faction1, value);
+      if (mine) return { faction: "faction1", player: mine, known: true };
+      const theirs = pass.find(faction2, value);
+      if (theirs) return { faction: "faction2", player: theirs, known: true };
+    }
   }
-  if (swapped) faction = faction === "faction1" ? "faction2" : "faction1";
-  return faction;
+  return { faction: "faction1", known: false };
+}
+
+function applySwap(faction: FactionId, swapped: boolean): FactionId {
+  if (!swapped) return faction;
+  return faction === "faction1" ? "faction2" : "faction1";
 }
 
 function inferMatchAt(

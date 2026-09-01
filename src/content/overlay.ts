@@ -95,7 +95,7 @@ export class Overlay {
     this.header.innerHTML = `
       <div class="title"><span>Faceit Numbers</span> · edge score</div>
       <button type="button" data-action="sort" title="Sort remaining maps from your best pick to worst">Best pick</button>
-      <button type="button" data-action="swap">Swap teams</button>
+      <button type="button" data-action="swap" title="Swap the sides if they look reversed">Swap teams</button>
       <button type="button" data-action="collapse" aria-label="Collapse">−</button>
     `;
 
@@ -223,10 +223,28 @@ export class Overlay {
     this.paintKey = key;
 
     this.syncSortButton();
+    this.syncSwapButton(stats);
     this.body.replaceChildren();
     if (canBrief) this.body.append(this.renderTabs());
     if (this.tab === "brief" && canBrief) this.renderBrief(stats);
     else this.renderVeto(stats);
+  }
+
+  /**
+   * When we could not find the account in either roster the side shown is the
+   * faction1 default, not something we established. Saying so on the button is
+   * the difference between the user spotting a reversed panel and trusting it.
+   */
+  private syncSwapButton(stats: LobbyStats): void {
+    const button = this.header.querySelector<HTMLButtonElement>(
+      '[data-action="swap"]',
+    );
+    if (!button) return;
+    const guessed = !stats.myFactionKnown;
+    button.classList.toggle("warn", guessed);
+    button.title = guessed
+      ? "Could not find your account in either roster — the sides are a guess. Click to flip them."
+      : "Swap the sides if they look reversed";
   }
 
   // Lives in the header, which is painted once, so it needs an explicit sync.
@@ -254,6 +272,7 @@ export class Overlay {
       stats.matchId,
       stats.status,
       stats.myFaction,
+      String(stats.myFactionKnown),
       this.tab,
       this.briefMap ?? "",
       this.selectedMap ?? "",
