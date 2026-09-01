@@ -14,6 +14,8 @@ import { fetchThisGame, isMatchFinished } from "./lib/match-stats";
 import {
   CACHE_TTL_MS,
   FETCH_CONCURRENCY,
+  FINISHED_MATCH_TTL_MS,
+  HISTORY_PAGE_SIZE,
   HISTORY_SOFT_DEADLINE_MS,
   LABEL_HISTORY_PAGES,
   LEETIFY_SOFT_DEADLINE_MS,
@@ -151,7 +153,14 @@ async function getLobbyStats(
       ? match.teams.faction2.leader
       : match.teams.faction1.leader;
 
-  const statsPromise = loadPlayerStats(roster, KNOWN_MAPS, token);
+  // A finished room is the only one that runs the as-of backfill, so it is the
+  // only one that gains from the wide page; a live lobby keeps the narrow fetch.
+  const statsPromise = loadPlayerStats(
+    roster,
+    KNOWN_MAPS,
+    token,
+    isMatchFinished(match.status ?? "") ? HISTORY_PAGE_SIZE : SAMPLE_LIMIT,
+  );
   const dropsPromise = fetchCaptainDrops(enemyCaptain, KNOWN_MAPS, token).catch(
     () => [] as LobbyStats["captainDrops"],
   );
@@ -268,7 +277,9 @@ async function getLobbyStats(
 }
 
 async function resolveSessionIdentity(token: string | undefined): Promise<Identity> {
-  if (!token) return {};
+  // No token is the normal case now that Faceit keeps the session in HttpOnly
+  // cookies: the request still authenticates on those, so there is nothing to
+  // bail out for. Returning early here was what left every lobby unidentified.
   const fromJwt: Identity = {
     nickname: nicknameFromToken(token),
     playerId: userIdFromToken(token),
@@ -277,9 +288,13 @@ async function resolveSessionIdentity(token: string | undefined): Promise<Identi
     void rememberIdentity(fromJwt);
     return fromJwt;
   }
+  // Keyed by token so a re-login as someone else cannot be served the previous
+  // account; cookie sessions share the one "cookie" slot, which the identity
+  // check below still corrects on the next fetch.
+  const cacheKey = token ?? "cookie";
   if (
     sessionIdentityCache &&
-    sessionIdentityCache.token === token &&
+    sessionIdentityCache.token === cacheKey &&
     Date.now() - sessionIdentityCache.at < CACHE_TTL_MS
   ) {
     return merge(fromJwt, sessionIdentityCache.identity);
@@ -287,7 +302,7 @@ async function resolveSessionIdentity(token: string | undefined): Promise<Identi
   const fetched = await fetchSessionIdentity(token);
   const identity = merge(fromJwt, fetched);
   if (fetched.nickname || fetched.playerId) {
-    sessionIdentityCache = { token, identity, at: Date.now() };
+    sessionIdentityCache = { token: cacheKey, identity, at: Date.now() };
   }
   void rememberIdentity(identity);
   return identity;
@@ -343,24 +358,79 @@ function pickRosterNickname(
   return session ?? hint;
 }
 
-async function fetchSessionIdentity(token: string): Promise<Identity> {
+async function fetchSessionIdentity(
+  token: string | undefined,
+): Promise<Identity> {
   try {
-    const payload = await faceitGet("/users/v1/sessions/me", token);
+    const payload = await faceitGet("/users/v1/sessions/me", token, {
+      siteFirst: true,
+    });
     return {
       nickname: nicknameFromPayload(payload),
-      playerId: userIdFromPayload(payload),
+      // /sessions/me names the player_id plainly `id`, which the shared claim
+      // search deliberately does not look for: it descends through nested
+      // objects, and half of them carry an unrelated `id`. Read it here, where
+      // the top level is known to be the account.
+      playerId: userIdFromPayload(payload) ?? topLevelId(payload),
     };
   } catch {
     return {};
   }
 }
 
+// Wrapped under a known key so the guid shape check and the lower-casing stay
+// in one place; nothing is descended into, `id` either is the account or is not.
+function topLevelId(payload: unknown): string | undefined {
+  const id = asRecord(payload)?.id;
+  return typeof id === "string" ? userIdFromPayload({ guid: id }) : undefined;
+}
+
+// Rosters, voting and status are all settled once a match ends, so the poll
+// that keeps a scoreboard open was re-reading an immutable payload every 30s
+// for as long as the tab lived. Live rooms still refetch every poll — that is
+// the one call whose answer actually moves.
+const finishedMatchCache = new Map<string, MatchDetails>();
+
 async function fetchMatch(
   matchId: string,
   token: string | undefined,
 ): Promise<MatchDetails> {
+  const settled = finishedMatchCache.get(matchId);
+  if (settled) return settled;
+
+  const stored = await readFinishedMatch(matchId);
+  if (stored) {
+    finishedMatchCache.set(matchId, stored);
+    return stored;
+  }
+
   const raw = await faceitGet(`/match/v2/match/${matchId}`, token);
-  return normalizeMatch(raw, matchId);
+  const match = normalizeMatch(raw, matchId);
+  if (isMatchFinished(match.status ?? "")) {
+    finishedMatchCache.set(matchId, match);
+    void chrome.storage.session
+      .set({ [finishedMatchKey(matchId)]: { at: Date.now(), match } })
+      .catch(() => {});
+  }
+  return match;
+}
+
+function finishedMatchKey(matchId: string): string {
+  return `finMatch:${matchId}`;
+}
+
+async function readFinishedMatch(
+  matchId: string,
+): Promise<MatchDetails | undefined> {
+  try {
+    const key = finishedMatchKey(matchId);
+    const bag = await chrome.storage.session.get(key);
+    const entry = bag[key] as { at: number; match: MatchDetails } | undefined;
+    if (entry && Date.now() - entry.at < FINISHED_MATCH_TTL_MS) return entry.match;
+  } catch {
+    // Cache miss is always safe: the fetch below is the source of truth.
+  }
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -654,18 +724,28 @@ async function itemsThrough(
       return time > 0 && time < beforeMs;
     }).length;
 
-  const startPage = seedItems && seedItems.length > 0 ? 1 : 0;
-  for (let page = startPage; page < LABEL_HISTORY_PAGES; page += 1) {
+  // The seed was paged at SAMPLE_LIMIT, so its row count says nothing about
+  // where a HISTORY_PAGE_SIZE walk should resume — starting at page 1 would
+  // skip everything between the two widths. Start at 0 and let the matchId set
+  // absorb the overlap; a seed that already reaches back far enough still
+  // exits above without a single request.
+  const seen = new Set(collected.map((item) => item.stats.matchId).filter(Boolean));
+  for (let page = 0; page < LABEL_HISTORY_PAGES; page += 1) {
     if (priorCount() >= SAMPLE_LIMIT) break;
     try {
       const raw = await faceitGet(
-        `/stats/v1/stats/time/users/${playerId}/games/cs2?page=${page}&size=${SAMPLE_LIMIT}`,
+        `/stats/v1/stats/time/users/${playerId}/games/cs2?page=${page}&size=${HISTORY_PAGE_SIZE}`,
         token,
       );
       const matches = asMatchList(raw);
       if (matches.length === 0) break;
-      collected.push(...timeMatchesToItems(matches));
-      if (matches.length < SAMPLE_LIMIT) break;
+      for (const item of timeMatchesToItems(matches)) {
+        const id = item.stats.matchId;
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        collected.push(item);
+      }
+      if (matches.length < HISTORY_PAGE_SIZE) break;
     } catch {
       break;
     }
@@ -702,21 +782,30 @@ async function historiesAsOf(
   return next;
 }
 
+/**
+ * `pageSize` is the whole story on a finished room. The label backfill wants
+ * SAMPLE_LIMIT games older than the match, and asking for the wide page here
+ * hands it that in the same response the aggregates already needed — one
+ * request per player instead of two, and none of the deeper paging.
+ */
 async function loadPlayerStats(
   roster: RosterPlayer[],
   pool: MapEntity[],
   token: string | undefined,
+  pageSize: number,
 ): Promise<Map<string, PlayerHistory>> {
   const now = Date.now();
   const unique = new Map<string, RosterPlayer>();
   for (const player of roster) unique.set(player.player_id, player);
+
+  await primeCaches([...unique.keys()], now);
 
   const parsed = await mapPool(
     [...unique.values()],
     PLAYER_FETCH_CONCURRENCY,
     async (player) => ({
       playerId: player.player_id,
-      history: await statsForPlayer(player, pool, token, now),
+      history: await statsForPlayer(player, pool, token, now, pageSize),
     }),
   );
 
@@ -727,6 +816,36 @@ async function loadPlayerStats(
 
 function playerCacheKey(playerId: string): string {
   return `finPlayer:${playerId}`;
+}
+
+/**
+ * One storage read for the whole roster instead of two per player. The worker
+ * wakes cold for most polls, so these lookups sit on the critical path ahead of
+ * every request — and being a warm-up only, a failure here just falls through
+ * to the per-player reads.
+ */
+async function primeCaches(playerIds: string[], now: number): Promise<void> {
+  const fresh = (entry: CacheEntry | undefined): entry is CacheEntry =>
+    Boolean(entry) && now - entry!.at < CACHE_TTL_MS;
+  const missing = playerIds.filter(
+    (id) => !fresh(playerCache.get(id)) || !fresh(histCache.get(id)),
+  );
+  if (missing.length === 0) return;
+
+  try {
+    const bag = await chrome.storage.session.get([
+      ...missing.map(playerCacheKey),
+      ...missing.map(histCacheKey),
+    ]);
+    for (const id of missing) {
+      const player = bag[playerCacheKey(id)] as CacheEntry | undefined;
+      if (fresh(player) && !playerCache.has(id)) playerCache.set(id, player);
+      const hist = bag[histCacheKey(id)] as CacheEntry | undefined;
+      if (fresh(hist) && !histCache.has(id)) histCache.set(id, hist);
+    }
+  } catch {
+    // Warm-up only — readCache/readHistCache still do their own lookups.
+  }
 }
 
 function rememberPlayer(playerId: string, entry: CacheEntry): void {
@@ -746,21 +865,30 @@ async function readCache(playerId: string, now: number): Promise<CacheEntry | un
   return undefined;
 }
 
+// The map aggregates read the newest SAMPLE_LIMIT rows and nothing more. A
+// wider fetch may sit in the cache for the label backfill to reuse, so slice
+// before parsing rather than trusting the array to be the right length —
+// widening the aggregate would move every win rate on screen.
+function sample(items: ReturnType<typeof timeMatchesToItems>) {
+  return items.length > SAMPLE_LIMIT ? items.slice(0, SAMPLE_LIMIT) : items;
+}
+
 async function statsForPlayer(
   player: RosterPlayer,
   pool: MapEntity[],
   token: string | undefined,
   now: number,
+  pageSize: number,
 ): Promise<PlayerHistory> {
   const cached = await readCache(player.player_id, now);
   if (cached) {
     if (cached.lifetime) return parseLifetimeMapStats(player, cached.lifetime, pool);
-    if (cached.items) return parsePlayerMapStats(player, cached.items, pool);
+    if (cached.items) return parsePlayerMapStats(player, sample(cached.items), pool);
   }
 
   try {
     const raw = await faceitGet(
-      `/stats/v1/stats/time/users/${player.player_id}/games/cs2?page=0&size=${SAMPLE_LIMIT}`,
+      `/stats/v1/stats/time/users/${player.player_id}/games/cs2?page=0&size=${pageSize}`,
       token,
     );
     const matches = asMatchList(raw);
@@ -769,7 +897,7 @@ async function statsForPlayer(
       return lifetimeFallback(player, pool, token, now);
     }
     rememberPlayer(player.player_id, { at: now, items });
-    return parsePlayerMapStats(player, items, pool);
+    return parsePlayerMapStats(player, sample(items), pool);
   } catch (error) {
     if (error instanceof FaceitApiError && error.status === 404) {
       return lifetimeFallback(player, pool, token, now);
