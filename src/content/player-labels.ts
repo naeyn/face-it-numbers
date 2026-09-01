@@ -138,6 +138,38 @@ function inSiteChrome(el: Element): boolean {
   return rect.top >= 0 && rect.bottom <= 72 && rect.height < 72;
 }
 
+/**
+ * Faceit prints a player's name and avatar well outside the roster: the match
+ * highlights and commendations carousels, the MVP and accolade cards, and
+ * every line of match chat. scanRoster matches on the name alone, so all of
+ * those looked like places a badge belonged.
+ *
+ * It reads worst on the highlight reel, and not by accident — role pendants
+ * deliberately seek out big player cards, and once a room finishes the only
+ * big cards left on the page are these. A badge is a claim about someone in
+ * this match's roster, so keep it to the roster and the scoreboard.
+ *
+ * Matched on the component name rather than the generated hash next to it:
+ * `styles__MvpCardHolder-sc-…` keeps its name across deploys and churns the
+ * suffix. Verified none of these contain the scoreboard table.
+ */
+const NON_ROSTER_SURFACES = [
+  "Highlight",
+  "Commendation",
+  "Mvp",
+  "Accolade",
+  "MessageContainer",
+  "MessageListItem",
+  "Draggable",
+  "Swiper",
+]
+  .map((name) => `[class*="${name}"]`)
+  .join(",");
+
+function inNonRosterSurface(el: Element): boolean {
+  return Boolean(el.closest(NON_ROSTER_SURFACES));
+}
+
 function* deepElements(root: ParentNode): Generator<Element> {
   const list = root.querySelectorAll("*");
   for (const el of list) {
@@ -230,7 +262,7 @@ function scanRoster(nicknames: string[]): Roster {
   const keys = [...buckets.keys()];
   if (keys.length === 0) return buckets;
   for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
+    if (inSiteChrome(el) || inNonRosterSurface(el)) continue;
     const href = el.getAttribute("href") ?? "";
     const fromHref = href ? nickFromHref(href) : undefined;
     const hrefKey = fromHref ? nickKey(fromHref) : undefined;
