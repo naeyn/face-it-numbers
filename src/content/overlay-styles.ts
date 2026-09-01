@@ -42,6 +42,12 @@ const OVERLAY_STYLES = `
 
 .title span { color: #ff5500; }
 
+/* Compact: three controls share the header with the title. */
+.header button {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
 button {
   background: transparent;
   color: #ddd;
@@ -71,24 +77,60 @@ button.on {
 
 .body { padding: 8px 10px 12px; }
 
-.legend {
+.caption {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #bbb;
-  margin-bottom: 6px;
-}
-
-.legend .keys {
-  display: flex;
-  gap: 12px;
-  flex: 1;
-}
-
-.legend .toggles {
-  display: flex;
+  align-items: flex-start;
   gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #9aa6b8;
+}
+
+.caption span { flex: 1; }
+
+.caption .help {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: #9aa6b8;
+}
+
+.caption .help:hover { color: #fff; }
+.caption .help.on {
+  color: #fff;
+  background: #ff55001f;
+  border-color: #ff5500;
+}
+
+.explain {
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid #2a2f39;
+  border-radius: 6px;
+  background: #12151b;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c5cdd8;
+}
+
+.explain p { margin: 0 0 6px; }
+.explain .lede { color: #e6e9ee; }
+.explain .lede b { color: #fff; }
+.explain ol { margin: 0 0 6px; padding-left: 16px; }
+.explain li { margin-bottom: 3px; }
+.explain li b { color: #e6e9ee; }
+.explain .live { color: #8fbc8f; }
+.explain .fine {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid #2a2f39;
+  color: #8d94a2;
 }
 
 .context {
@@ -121,7 +163,9 @@ button.on {
   color: #c8c8c8;
 }
 
-.side .stat.stack { cursor: help; }
+.side .stat.stack,
+.side .stat.elo,
+.side .stat .delta { cursor: help; }
 
 .side .stat b {
   color: #f2f2f2;
@@ -158,15 +202,6 @@ button.on {
 }
 .smart.ready { color: #8fbc8f; }
 
-.swatch {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  margin-right: 4px;
-  font-style: normal;
-}
-
 .muted {
   color: #9a9a9a;
   font-size: 12px;
@@ -194,6 +229,18 @@ button.on {
   font-size: 11px;
   font-weight: 600;
   color: #bdbdbd;
+}
+
+.breakdown h2 .raw {
+  margin: 0 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #262b34;
+  color: #9aa6b8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .cols {
@@ -373,13 +420,13 @@ button.on {
   cursor: help;
 }
 
-/* Pre-game expectations read as forecasts: dashed outline, no fill —
+/* Pre-game expectations read as forecasts: solid outline, no fill —
    distinct from the filled form labels and outlined-pill role pendants. */
-.brief-tag.hot { border: 1px dashed #ff5500; background: transparent; color: #ff8a55; }
-.brief-tag.good { border: 1px dashed #3f7a4c; background: transparent; color: #9ee59e; }
-.brief-tag.cold { border: 1px dashed #8a4444; background: transparent; color: #ff9a9a; }
-.brief-tag.bad { border: 1px dashed #7a4c33; background: transparent; color: #f0b090; }
-.brief-tag.info { border: 1px dashed #3d5680; background: transparent; color: #9ec1ff; }
+.brief-tag.hot { border: 1px solid #ff5500; background: transparent; color: #ff8a55; }
+.brief-tag.good { border: 1px solid #3f7a4c; background: transparent; color: #9ee59e; }
+.brief-tag.cold { border: 1px solid #8a4444; background: transparent; color: #ff9a9a; }
+.brief-tag.bad { border: 1px solid #7a4c33; background: transparent; color: #f0b090; }
+.brief-tag.info { border: 1px solid #3d5680; background: transparent; color: #9ec1ff; }
 
 .tip {
   position: fixed;

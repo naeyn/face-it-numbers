@@ -1,247 +1,33 @@
 import type {
   GameLabel,
-  GameLabelKey,
   LobbyStats,
   PlayerHistory,
   RoleLabel,
-  RoleLabelKey,
 } from "../lib/types";
 import { loadSettings } from "../lib/settings";
-import { assignGameLabels } from "../lib/game-labels";
+import {
+  ATTR,
+  badgeElement,
+  badgeFromLabel,
+  badgeFromRole,
+  badgeFromStreak,
+  hideTip,
+  LABEL_CSS,
+  RENDER_VERSION,
+  ROLE_ATTR,
+  showTip,
+  STREAK_ATTR,
+  type Badge,
+  type StreakEntry,
+} from "./badge-art";
+import { assignGameLabels, sameMatchId } from "../lib/game-labels";
+import { currentStreak } from "../lib/insights";
+import { STREAK_MIN } from "../lib/constants";
 import { BANTER_ROLE_KEYS } from "../lib/role-labels";
 import type { ThisGameLine } from "../lib/match-stats";
 
-const ATTR = "data-fin-label";
-const ROLE_ATTR = "data-fin-role";
 const STRIP_ATTR = "data-fin-role-strip";
 const STYLE_ID = "faceit-numbers-player-labels";
-// Bump on ANY badge rendering change (CSS, icons, structure): the repaint
-// dedup compares signatures against badges already in the DOM, which survive
-// extension updates — without a version, stale badges are never redrawn.
-const RENDER_VERSION = "v24";
-
-const LABEL_CSS = `
-.fin-player-label {
-  display: inline-flex !important;
-  align-items: center;
-  margin-left: 4px !important;
-  margin-right: 4px !important;
-  padding: 2px 7px !important;
-  border-radius: 4px;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.03em;
-  line-height: 1.3;
-  vertical-align: middle;
-  cursor: help;
-  white-space: nowrap;
-  position: relative;
-  z-index: 2147483000;
-}
-.fin-label-host {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  align-items: center !important;
-}
-.fin-player-label.compact {
-  width: 22px !important;
-  height: 22px !important;
-  padding: 0 !important;
-  margin: 0 0 0 6px !important;
-  flex: 0 0 22px !important;
-  justify-content: center;
-  align-self: center;
-  overflow: visible !important;
-  border-radius: 4px;
-}
-.fin-player-label.compact svg {
-  width: 14px;
-  height: 14px;
-  display: block;
-  fill: currentColor;
-  pointer-events: none;
-}
-.fin-player-label.hot { background: #ff5500 !important; color: #fff !important; }
-.fin-player-label.good { background: #1f4a28 !important; color: #9ee59e !important; }
-.fin-player-label.bad { background: #4a2a1f !important; color: #f0b090 !important; }
-.fin-player-label.cold { background: #4a1f1f !important; color: #ff9a9a !important; }
-.fin-player-label.info { background: #2a3344 !important; color: #9ec1ff !important; }
-/* Badge language: FORM labels = filled squares (above); ROLE pendants =
-   outlined pills with an always-visible icon; pre-game brief tags in the
-   overlay = dashed outlines. */
-.fin-player-label.role {
-  border-radius: 999px !important;
-  padding: 2px 9px !important;
-}
-.fin-player-label.role.compact { border-radius: 999px !important; }
-.fin-player-label.role.compact svg { width: 16px; height: 16px; }
-.fin-player-label.role:not(.compact) svg {
-  width: 15px;
-  height: 15px;
-  margin-right: 5px;
-  flex: 0 0 15px;
-  fill: currentColor;
-  pointer-events: none;
-}
-.fin-player-label.role.good { background: rgba(158,229,158,.10) !important; color: #9ee59e !important; box-shadow: inset 0 0 0 1.5px #3f7a4c; }
-.fin-player-label.role.bad { background: rgba(240,176,144,.10) !important; color: #f0b090 !important; box-shadow: inset 0 0 0 1.5px #7a4c33; }
-.fin-player-label.role.info { background: rgba(158,193,255,.10) !important; color: #9ec1ff !important; box-shadow: inset 0 0 0 1.5px #3d5680; }
-/* Career (Leetify-sourced) pendants: Leetify brand gradient ring
-   (their --primary #f84982 to --purple #6f42c1) */
-.fin-player-label.role.career {
-  box-sizing: border-box;
-  border: 2px solid transparent !important;
-  background:
-    linear-gradient(#17171b, #17171b) padding-box,
-    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
-  box-shadow: none !important;
-}
-/* Role pendant as an avatar corner badge, like Faceit's own avatar badges */
-.fin-avatar-badge-host { position: relative !important; }
-.fin-player-label.role.avatar-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 28px !important;
-  height: 28px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  flex: 0 0 28px !important;
-  justify-content: center;
-  border-radius: 999px !important;
-  background: #17171b !important;
-  z-index: 12;
-  overflow: visible !important;
-}
-.fin-player-label.role.avatar-badge svg {
-  width: 17px;
-  height: 17px;
-  display: block;
-  fill: currentColor;
-  pointer-events: none;
-}
-/* Must outrank .avatar-badge's solid background (same importance, later rule) */
-.fin-player-label.role.avatar-badge.career {
-  box-sizing: border-box;
-  border: 2px solid transparent !important;
-  background:
-    linear-gradient(#17171b, #17171b) padding-box,
-    linear-gradient(135deg, #f84982, #6f42c1) border-box !important;
-  box-shadow: none !important;
-}
-#fin-label-tip {
-  position: fixed;
-  z-index: 2147483646;
-  max-width: 280px;
-  padding: 8px 10px;
-  background: #161a22;
-  color: #f2f4f8;
-  border: 1px solid #3d4656;
-  border-radius: 6px;
-  box-shadow: 0 10px 28px rgba(0,0,0,.5);
-  font-size: 12px;
-  line-height: 1.35;
-  pointer-events: none;
-}
-#fin-label-tip .fin-tip-name {
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  margin-bottom: 2px;
-}
-#fin-label-tip .fin-tip-hint { color: #d5dbe6; }
-#fin-label-tip .fin-tip-detail {
-  color: #9aa6b8;
-  margin-top: 5px;
-  font-size: 11px;
-}
-#fin-label-tip .fin-tip-scope {
-  color: #78859a;
-  margin-top: 6px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-`;
-
-const TIP_ID = "fin-label-tip";
-
-const LABEL_HINTS: Record<GameLabelKey, string> = {
-  lifegame: "One of this player's best games in the prior 30",
-  brick: "One of this player's worst games in the prior 30",
-  carry: "Top of their team and well above their usual",
-  passenger: "Won while finishing last on their team",
-  bounce: "Won after three losses, back near their level",
-  tilted: "Lost after three losses and still below usual",
-  cooking: "Clearly above their recent average",
-  offgame: "Clearly below their recent average",
-  merchant: "Strong game on a map they usually play well",
-  tourist: "Extreme game on a map they barely play",
-};
-
-const ROLE_HINTS: Record<RoleLabelKey, string> = {
-  humiliation: "Got knife or Zeus kills — the classic announcer award",
-  clutcher: "Won multiple 1-versus-X clutch rounds",
-  highlight: "Racks up multi-kill rounds game after game",
-  opener: "Entry fragger: took the round's first duel most often, and won them",
-  awper: "The lobby's sniper: biggest share of kills with a sniper rifle",
-  onetapper: "Cleanest aim in the lobby: highest headshot rate in recent games",
-  closer: "Finishes rounds: earns the most MVP stars in recent games",
-  spacetaker:
-    "Took the round's first duel most often, even when losing it — creates space",
-  utilityking: "Dealt the most grenade damage in the lobby",
-  pistoldemon: "Got a big share of their kills with pistols",
-  damagedealer: "Consistently top damage output without the top K/D",
-  support: "Sets up teammates more than they frag themselves",
-  trader: "Reliably trades fallen teammates — career data via Leetify",
-  flashsupport: "Their flashbangs actually blind people — career data via Leetify",
-  crosshair: "Best crosshair placement among Leetify-tracked players here",
-  spray: "Best spray control among Leetify-tracked players here",
-  reflexes: "Fastest reaction time among Leetify-tracked players here",
-  sided: "Performs much better on one side of the map — via Leetify",
-};
-
-const ROLE_ICON_PATHS: Record<RoleLabelKey, string> = {
-  humiliation: "M2 13.5 11.5 4l2.5-2.5.5 3L5 14l-3 .5z",
-  clutcher: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8-3-1-5-3.7-5-6.8V3.5z",
-  highlight: "M8 1l1.8 5.2L15 8l-5.2 1.8L8 15l-1.8-5.2L1 8l5.2-1.8z",
-  opener: "M1.5 5.8h7.3V2.4L14.8 8l-6 5.6V10.2H1.5z",
-  awper:
-    "M7.35.2h1.3v3h-1.3zM7.35 12.8h1.3v3h-1.3zM.2 7.35h3v1.3h-3zM12.8 7.35h3v1.3h-3zM8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6zm0 2.1a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6zm0 1.7a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z",
-  onetapper:
-    "M8 1.6a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2zM2 14.8c0-3.3 2.7-5.1 6-5.1s6 1.8 6 5.1zM8 3.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z",
-  closer: "M2.6 1h2V15h-2zM4.6 1.8h9.6l-2.6 3.4 2.6 3.4H4.6z",
-  spacetaker:
-    "M1 1h6.2L4.9 3.3l3.2 3.2-1.6 1.6-3.2-3.2L1 7.2zM15 15H8.8l2.3-2.3-3.2-3.2 1.6-1.6 3.2 3.2L15 8.8z",
-  utilityking: "M5.8.6h4.4v2.5H5.8zM8 3.2a5.7 5.7 0 1 1 0 11.4A5.7 5.7 0 0 1 8 3.2z",
-  pistoldemon:
-    "M1.5 4h13v3.2H9.2l-.6 2.4c-.2.8-.7 1.2-1.5 1.2H4.6l1-3.6H3.2L1.5 5.4z",
-  damagedealer:
-    "M8 1.2 9.6 5l3.9-1.7-2.3 3.5 3.6 1.9-4 .6.9 4-3.7-2.2L4.3 13l.9-4-4-.6L4.8 6.5 2.5 3.3 6.4 5z",
-  support: "M7 3h2v4h4v2H9v4H7V9H3V7h4z",
-  trader: "M2 4.2h8V1.8L14.6 6 10 10.2V7.8H2zM14 11.8H6v2.4L1.4 10 6 5.8v2.4h8z",
-  flashsupport:
-    "M8 5.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6zM7.4 0h1.2v3.2H7.4zM7.4 12.8h1.2V16H7.4zM0 7.4h3.2v1.2H0zM12.8 7.4H16v1.2h-3.2zM2.2 3.1l.9-.9 2.2 2.2-.9.9zM10.7 11.6l.9-.9 2.2 2.2-.9.9zM13 2.2l.9.9-2.2 2.2-.9-.9zM4.4 10.7l.9.9-2.2 2.2-.9-.9z",
-  crosshair:
-    "M7.4 1h1.2v3H7.4zM7.4 12h1.2v3H7.4zM1 7.4h3v1.2H1zM12 7.4h3v1.2h-3zM8 5.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z",
-  spray:
-    "M3 3.2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM13 9.8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5.5 11a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM10.5 2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z",
-  reflexes: "M9.2 1.2 3.8 8.6h3.7l-.9 6.2 6.2-8.6H9.1l1.1-5z",
-  sided: "M8 1.5 13 3.5v4.2c0 3.1-2 5.8-5 6.8V1.5z",
-};
-
-const ICON_PATHS: Record<GameLabelKey, string> = {
-  lifegame: "M8 1.3 9.8 5.6l4.7.4-3.5 3.1 1.1 4.6L8 11.4 3.9 13.7l1.1-4.6L1.5 6l4.7-.4z",
-  brick: "M1 2.5h6.4v4.2H1zm7.6 0H15v4.2H8.6zM1 8.3h4.2V13H1zm5.8 0H15V13H6.8z",
-  carry: "M2 12.8h12l-.8-5.3-3.2 2.2L8 3.2 6 9.7 2.8 7.5z",
-  passenger: "M8 1.8a2.3 2.3 0 1 1 0 4.6 2.3 2.3 0 0 1 0-4.6zM3.2 14.2c0-2.9 2.1-4.7 4.8-4.7s4.8 1.8 4.8 4.7z",
-  bounce: "M3.2 7.2h6.2a2.6 2.6 0 0 1 0 5.2H8v-1.7h1.4a.9.9 0 0 0 0-1.8H3.2l2-2-1.3-1.2L1 8.3l2.9 3.6 1.3-1.2z",
-  tilted: "M9.2 1.2 3.8 8.6h3.7l-.9 6.2 6.2-8.6H9.1l1.1-5z",
-  cooking: "M5.2 6.4c0-1.7 1-3 2-3 .4-1.1 1.2-1.9 1.8-1.9s1.4.8 1.8 1.9c1 0 2 1.3 2 3zm-.4.9h7.4v2H4.8zm.8 2.5h5.8V13H5.6z",
-  offgame: "M10.2 2.2a6.2 6.2 0 1 0 3.9 10.4A5.6 5.6 0 0 1 10.2 2.2z",
-  merchant: "M1.2 6.2 2.6 3h10.8l1.4 3.2zm1 1h11.6v6.6H2.2zm3.2 1.6h2.2v5H5.4z",
-  tourist: "M5.2 3.2V2h5.6v1.2H14v3.2H2V3.2zm-2 4h11.6v6.6H3.2z",
-};
 
 function ensureStyle(): void {
   let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
@@ -253,83 +39,60 @@ function ensureStyle(): void {
   style.textContent = LABEL_CSS;
 }
 
-// One badge shape for both families (performance labels + role pendants) so
-// tooltip, icon, and row-finding logic stay shared.
-type Badge = {
-  playerId: string;
-  nickname: string;
-  text: string;
-  tone: string;
-  hint: string;
-  detail: string;
-  scope: string;
-  iconPath: string;
-  attr: string;
-  extraClass: string;
-};
+// A badge animates in ONCE per player per match. `injectPlayerLabels` wipes
+// and re-injects every badge whenever any one of them changes, and the
+// MutationObserver re-runs on a 1.2s debounce, so without this an unrelated
+// form-label update would re-pop every streak badge on the page.
+const animated = new Set<string>();
+let animatedMatch = "";
+let entering = new Set<string>();
 
-function badgeFromLabel(label: GameLabel): Badge {
-  return {
-    playerId: label.playerId,
-    nickname: label.nickname,
-    text: label.text,
-    tone: label.tone,
-    hint: LABEL_HINTS[label.key],
-    detail: label.detail,
-    scope: "Form · this game vs their previous 30 games",
-    iconPath: ICON_PATHS[label.key],
-    attr: ATTR,
-    extraClass: "",
-  };
+function entryKey(badge: Badge): string {
+  return `${badge.attr}:${badge.playerId}`;
 }
 
-function badgeFromRole(role: RoleLabel): Badge {
-  const career = role.source === "leetify";
-  return {
-    playerId: role.playerId,
-    nickname: role.nickname,
-    text: role.text,
-    tone: role.tone,
-    hint: ROLE_HINTS[role.key],
-    detail: role.detail,
-    scope: career
-      ? "Role · career data provided by Leetify"
-      : "Role · tendency from their recent matches, vs this lobby",
-    iconPath: ROLE_ICON_PATHS[role.key],
-    attr: ROLE_ATTR,
-    extraClass: career ? " role career" : " role",
-  };
+function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
+  const span = badgeElement(badge, compact);
+  span.addEventListener("mouseenter", () => showTip(span, badge));
+  span.addEventListener("mouseleave", hideTip);
+  if (entering.has(entryKey(badge))) {
+    span.classList.add("fin-enter");
+    // Marked here, not up front: a badge whose row is not in the DOM yet
+    // never renders, and should still animate when the row does appear.
+    // Within one pass `entering` still holds the key, so a player shown on
+    // two rows animates on both.
+    animated.add(entryKey(badge));
+    // Capped stagger: ten badges read as one sweep, a full scoreboard still
+    // settles inside half a second.
+    span.style.animationDelay = `${Math.min(badge.order, 9) * 40}ms`;
+  }
+  return span;
 }
 
-function hideTip(): void {
-  document.getElementById(TIP_ID)?.remove();
-}
+// Lobby intel only: once the match starts, the slot next to the name belongs
+// to the form labels, so the streak badge stands down. Same status set the
+// background uses to decide that game labels are not computable yet.
+const PRE_MATCH = /vot|ready|config|created|sched|check/i;
 
-function showTip(anchor: HTMLElement, badge: Badge): void {
-  hideTip();
-  const tip = document.createElement("div");
-  tip.id = TIP_ID;
-  const name = document.createElement("div");
-  name.className = "fin-tip-name";
-  name.textContent = badge.text;
-  const hint = document.createElement("div");
-  hint.className = "fin-tip-hint";
-  hint.textContent = badge.hint;
-  const detail = document.createElement("div");
-  detail.className = "fin-tip-detail";
-  detail.textContent = badge.detail;
-  const scope = document.createElement("div");
-  scope.className = "fin-tip-scope";
-  scope.textContent = badge.scope;
-  tip.append(name, hint, detail, scope);
-  document.documentElement.append(tip);
-  const rect = anchor.getBoundingClientRect();
-  const width = tip.offsetWidth;
-  const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
-  const top = rect.bottom + 8;
-  const flip = top + tip.offsetHeight > window.innerHeight - 8;
-  tip.style.left = `${left}px`;
-  tip.style.top = `${flip ? Math.max(8, rect.top - tip.offsetHeight - 8) : top}px`;
+function streakEntries(stats: LobbyStats): StreakEntry[] {
+  if (!PRE_MATCH.test(stats.status ?? "")) return [];
+  const entries: StreakEntry[] = [];
+  for (const row of stats.historyGames ?? []) {
+    // Sort and filter once, then let both the streak and the tooltip form
+    // string read the same array — currentStreak would otherwise redo it.
+    const recent = [...row.games]
+      .sort((a, b) => (b.at || 0) - (a.at || 0))
+      .filter((game) => !(game.matchId && sameMatchId(game.matchId, stats.matchId)));
+    const streak = currentStreak(recent);
+    if (!streak || streak.len < STREAK_MIN) continue;
+    entries.push({
+      playerId: row.playerId,
+      nickname: row.nickname,
+      streak,
+      form: recent.slice(0, 10).map((game) => game.won),
+    });
+  }
+  return entries;
 }
 
 function nicknamesEqual(a: string, b: string): boolean {
@@ -383,39 +146,6 @@ function* deepElements(root: ParentNode): Generator<Element> {
   }
 }
 
-function iconFor(path: string): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  el.setAttribute("d", path);
-  svg.append(el);
-  return svg;
-}
-
-function badgeFor(badge: Badge, compact: boolean): HTMLSpanElement {
-  const span = document.createElement("span");
-  span.className = `fin-player-label ${badge.tone}${badge.extraClass}${compact ? " compact" : ""}`;
-  span.setAttribute(badge.attr, badge.playerId);
-  span.setAttribute("data-fin-sig", `${RENDER_VERSION}:${badge.text}:${badge.detail}`);
-  span.setAttribute(
-    "aria-label",
-    `${badge.text}. ${badge.hint}. ${badge.detail}. ${badge.scope}`,
-  );
-  span.addEventListener("mouseenter", () => showTip(span, badge));
-  span.addEventListener("mouseleave", hideTip);
-  if (compact) {
-    span.append(iconFor(badge.iconPath));
-  } else if (badge.attr === ROLE_ATTR) {
-    // Role pendants always carry their icon — part of the visual language
-    // separating them from the filled form labels.
-    span.append(iconFor(badge.iconPath), document.createTextNode(badge.text));
-  } else {
-    span.textContent = badge.text;
-  }
-  return span;
-}
-
 function alreadyLabeled(node: Element, badge: Badge): boolean {
   const parent = node.parentElement;
   if (parent?.querySelector(`[${badge.attr}="${badge.playerId}"]`)) return true;
@@ -449,16 +179,24 @@ function markInlineHost(node: Element): void {
 
 function attachBadge(node: Element, badge: Badge, compact: boolean): void {
   if (alreadyLabeled(node, badge)) return;
-  // A role pill sits after the form chip when the player has both.
-  const sibling = node.nextElementSibling;
-  const anchor =
-    badge.attr === ROLE_ATTR && sibling?.getAttribute(ATTR) === badge.playerId
-      ? sibling
-      : node;
+  // Fixed order along the row: form label, then streak, then role pill — so
+  // walk past any sibling badge of a family that sorts ahead of this one.
+  const precede =
+    badge.attr === ROLE_ATTR
+      ? [ATTR, STREAK_ATTR]
+      : badge.attr === STREAK_ATTR
+        ? [ATTR]
+        : [];
+  let anchor = node;
+  while (precede.length > 0) {
+    const next = anchor.nextElementSibling;
+    if (!next) break;
+    if (!precede.some((attr) => next.getAttribute(attr) === badge.playerId)) break;
+    anchor = next;
+  }
   anchor.after(badgeFor(badge, compact));
   if (compact) markInlineHost(node);
 }
-
 
 function nameMatches(el: Element, nickname: string): boolean {
   const href = el.getAttribute("href") ?? "";
@@ -470,6 +208,43 @@ function nameMatches(el: Element, nickname: string): boolean {
 
 function rosterNicks(stats: LobbyStats): string[] {
   return [...stats.you.players, ...stats.them.players].map((player) => player.nickname);
+}
+
+function nickKey(nickname: string): string {
+  return nickname.trim().toLowerCase();
+}
+
+// Every element that matched SOME roster nickname, bucketed by that nickname
+// and kept in document order.
+type Roster = Map<string, Element[]>;
+
+// One pass for the whole roster, instead of one pass per badge. The two costs
+// in a pass do not depend on which badge is being placed: `inSiteChrome` is
+// five closest() walks plus a rect read, and the text test concatenates a
+// container's entire subtree. Scanning per badge re-paid both ten-odd times
+// and — worse — interleaved those rect reads with badge insertions, so every
+// badge after the first forced a synchronous relayout. Scan once, place after.
+function scanRoster(nicknames: string[]): Roster {
+  const buckets: Roster = new Map();
+  for (const nickname of nicknames) buckets.set(nickKey(nickname), []);
+  const keys = [...buckets.keys()];
+  if (keys.length === 0) return buckets;
+  for (const el of deepElements(document)) {
+    if (inSiteChrome(el)) continue;
+    const href = el.getAttribute("href") ?? "";
+    const fromHref = href ? nickFromHref(href) : undefined;
+    const hrefKey = fromHref ? nickKey(fromHref) : undefined;
+    const textKey = nickKey((el.textContent ?? "").replace(/\s+/g, " "));
+    for (const key of keys) {
+      // Same predicate as nameMatches, with the per-element half hoisted out.
+      if (key === hrefKey || key === textKey) buckets.get(key)!.push(el);
+    }
+  }
+  return buckets;
+}
+
+function startsFor(roster: Roster, nickname: string): Element[] {
+  return roster.get(nickKey(nickname)) ?? [];
 }
 
 function hasNick(root: Element, nickname: string): boolean {
@@ -518,14 +293,14 @@ function innermostName(row: Element, nickname: string): Element | undefined {
   return ownBest ?? textBest;
 }
 
-function injectOne(badge: Badge, allNicks: string[]): void {
-  const starts: Element[] = [];
-  for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
-    if (nameMatches(el, badge.nickname)) starts.push(el);
-  }
+// A resolved target: which element a badge goes next to. Produced in the read
+// phase, consumed in the write phase — nothing here touches the DOM.
+type Placement = { badge: Badge; node: Element; compact: boolean };
+
+function planOne(badge: Badge, allNicks: string[], roster: Roster): Placement[] {
   const seen = new Set<Element>();
-  for (const start of starts) {
+  const placements: Placement[] = [];
+  for (const start of startsFor(roster, badge.nickname)) {
     const row = findRow(start, badge.nickname, allNicks);
     if (seen.has(row)) continue;
     seen.add(row);
@@ -534,8 +309,9 @@ function injectOne(badge: Badge, allNicks: string[]): void {
       (compact
         ? scoreboardName(row, badge.nickname)
         : innermostName(row, badge.nickname)) ?? start;
-    attachBadge(name, badge, compact);
+    placements.push({ badge, node: name, compact });
   }
+  return placements;
 }
 
 // ---- Role avatar badges: the pendant overlays the top-right corner of the
@@ -611,17 +387,35 @@ function visibleFrame(avatar: Element, card: Element): Element | undefined {
   return undefined;
 }
 
-function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
+// An avatar pendant that has found its card, its host, and the box it pins to.
+// `pinToCorner` still runs in the write phase — it has to read the span's own
+// offsetParent — but it is deferred until every insertion is done, so the whole
+// batch costs one relayout instead of one per pendant.
+type AvatarPlacement = {
+  badge: Badge;
+  card: Element;
+  host: Element;
+  anchor: Element;
+};
+
+type RolePlan = { avatars: AvatarPlacement[]; inline: Placement[] };
+
+function planRoleAvatarBadge(
+  role: RoleLabel,
+  allNicks: string[],
+  roster: Roster,
+): RolePlan {
+  // Rebuilt per role rather than reusing the ordered badge from the caller,
+  // which is what the previous per-role pass did: avatar pendants keep
+  // order 0 and enter together, they do not join the row-badge stagger.
   const badge = badgeFromRole(role);
+  const plan: RolePlan = { avatars: [], inline: [] };
   const seen = new Set<Element>();
-  for (const el of deepElements(document)) {
-    if (inSiteChrome(el)) continue;
-    if (!nameMatches(el, role.nickname)) continue;
+  for (const el of startsFor(roster, role.nickname)) {
     const card = findRow(el, role.nickname, allNicks);
     if (seen.has(card)) continue;
     seen.add(card);
     if (isCompactRow(card)) continue; // big player cards only
-    if (card.querySelector(`[${ROLE_ATTR}="${role.playerId}"]`)) continue;
     const avatar = findAvatar(card);
     // The avatar's own card: the PlayerCardContainer frame. Its visible
     // outline (which pokes above the player row) is the styles__PlayerCard
@@ -638,27 +432,36 @@ function injectRoleAvatarBadge(role: RoleLabel, allNicks: string[]): void {
     }
     const host = container instanceof HTMLElement ? container : avatar?.parentElement;
     if (host && anchor) {
-      host.classList.add("fin-avatar-badge-host");
-      const span = badgeFor(badge, true);
-      span.classList.add("avatar-badge");
-      host.append(span);
-      pinToCorner(span, anchor);
+      plan.avatars.push({ badge, card, host, anchor });
     } else {
       const name = innermostName(card, role.nickname);
-      if (name) attachBadge(name, badge, false);
+      if (name) plan.inline.push({ badge, node: name, compact: false });
     }
   }
+  return plan;
+}
+
+// Returns the inserted span so the caller can pin it once all writes are done.
+function attachAvatarBadge(placement: AvatarPlacement): HTMLElement | undefined {
+  const { badge, card, host } = placement;
+  if (card.querySelector(`[${ROLE_ATTR}="${badge.playerId}"]`)) return undefined;
+  host.classList.add("fin-avatar-badge-host");
+  const span = badgeFor(badge, true);
+  span.classList.add("avatar-badge");
+  host.append(span);
+  return span;
 }
 
 function scrapeLines(stats: LobbyStats): ThisGameLine[] {
-  const roster = [...stats.you.players, ...stats.them.players];
+  const players = [...stats.you.players, ...stats.them.players];
   const youIds = new Set(stats.you.players.map((player) => player.player_id));
   const lines: ThisGameLine[] = [];
+  // Read-only, and runs before any badge is inserted, so it can share the
+  // same single pass rather than re-walking the document per player.
+  const roster = scanRoster(players.map((player) => player.nickname));
 
-  for (const player of roster) {
-    for (const el of deepElements(document)) {
-      if (inSiteChrome(el)) continue;
-      if (!nameMatches(el, player.nickname)) continue;
+  for (const player of players) {
+    for (const el of startsFor(roster, player.nickname)) {
       let row: Element | null = el;
       for (let i = 0; i < 8 && row; i += 1) {
         const text = (row.textContent ?? "").replace(/\s+/g, " ");
@@ -745,37 +548,78 @@ export async function injectPlayerLabels(stats: LobbyStats): Promise<void> {
         (role) => settings.banterLabels || !BANTER_ROLE_KEYS.has(role.key),
       )
     : [];
-  const badges = [...inline, ...roles.map(badgeFromRole)];
+  const streaks: Badge[] = settings.streakLabels
+    ? streakEntries(stats).map(badgeFromStreak)
+    : [];
+  const badges = [...inline, ...streaks, ...roles.map(badgeFromRole)];
+  badges.forEach((badge, index) => {
+    badge.order = index;
+  });
   if (badges.length === 0) {
     clearPlayerLabels();
     return;
   }
-  const existing = document.querySelectorAll(`[${ATTR}], [${ROLE_ATTR}]`);
+  const existing = document.querySelectorAll(
+    `[${ATTR}], [${STREAK_ATTR}], [${ROLE_ATTR}]`,
+  );
   const wanted = badges.map(
     (badge) =>
       `${badge.attr}:${badge.playerId}:${RENDER_VERSION}:${badge.text}:${badge.detail}`,
   );
-  const seen = [...existing].map((node) => {
-    const attr = node.hasAttribute(ATTR) ? ATTR : ROLE_ATTR;
+  const seen = new Set([...existing].map((node) => {
+    const attr = node.hasAttribute(ATTR)
+      ? ATTR
+      : node.hasAttribute(STREAK_ATTR)
+        ? STREAK_ATTR
+        : ROLE_ATTR;
     return `${attr}:${node.getAttribute(attr) ?? ""}:${node.getAttribute("data-fin-sig") ?? ""}`;
-  });
+  }));
   if (
     existing.length === wanted.length &&
-    wanted.every((item) => seen.includes(item))
+    wanted.every((item) => seen.has(item))
   ) {
     return;
   }
   ensureStyle();
   clearPlayerLabels();
+  if (stats.matchId !== animatedMatch) {
+    animatedMatch = stats.matchId;
+    animated.clear();
+  }
+  entering = new Set(
+    badges.map(entryKey).filter((key) => !animated.has(key)),
+  );
   const allNicks = rosterNicks(stats);
-  for (const badge of inline) injectOne(badge, allNicks);
-  for (const role of roles) injectRoleAvatarBadge(role, allNicks);
+  const roster = scanRoster(allNicks);
+  // Reads first: resolve every badge's target — which involves rect reads via
+  // isCompactRow and findAvatar — before anything is inserted, so no insertion
+  // can invalidate a measurement taken for a later badge.
+  const inlinePlan = inline.flatMap((badge) => planOne(badge, allNicks, roster));
+  const streakPlan = streaks.flatMap((badge) => planOne(badge, allNicks, roster));
+  const rolePlans = roles.map((role) => planRoleAvatarBadge(role, allNicks, roster));
+  // Writes second, in family order: attachBadge walks past sibling badges of
+  // families that sort ahead of it, so form labels must land before streaks and
+  // streaks before role pills for the row order to come out right.
+  for (const item of inlinePlan) attachBadge(item.node, item.badge, item.compact);
+  for (const item of streakPlan) attachBadge(item.node, item.badge, item.compact);
+  const pins: Array<[HTMLElement, Element]> = [];
+  for (const plan of rolePlans) {
+    for (const item of plan.avatars) {
+      const span = attachAvatarBadge(item);
+      if (span) pins.push([span, item.anchor]);
+    }
+    for (const item of plan.inline) attachBadge(item.node, item.badge, false);
+  }
+  // Pinning reads geometry again, so it goes last: the first pin flushes one
+  // relayout covering every insertion above, the rest read a clean tree.
+  for (const [span, anchor] of pins) pinToCorner(span, anchor);
+  entering = new Set();
 }
 
 export function clearPlayerLabels(): void {
   hideTip();
   document
-    .querySelectorAll(`[${ATTR}], [${ROLE_ATTR}], [${STRIP_ATTR}]`)
+    .querySelectorAll(`[${ATTR}], [${STREAK_ATTR}], [${ROLE_ATTR}], [${STRIP_ATTR}]`)
     .forEach((node) => node.remove());
   document.querySelectorAll(".fin-label-host").forEach((node) => {
     node.classList.remove("fin-label-host");

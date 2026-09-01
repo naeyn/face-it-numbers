@@ -1,10 +1,11 @@
 import { LABEL_MIN_SAMPLE, THIN_MEAN_GAMES } from "./constants";
-import { displayWinRate } from "./scoring";
+import { mapEdge, scoreFromEdge } from "./score";
 import { stackOverlap } from "./insights";
 import type {
   HistoryGame,
   LobbyStats,
   PlayerMapStat,
+  SmartSummary,
   TeamMapStat,
 } from "./types";
 
@@ -47,7 +48,8 @@ export type MatchBriefing = {
   displayName: string;
   headline: string;
   lean: "you" | "them" | "even";
-  gap: number;
+  /** The panel's edge score for this map, so the Brief cannot contradict it. */
+  score: number;
   you: TeamBrief;
   them: TeamBrief;
 };
@@ -183,7 +185,6 @@ function buildTeam(
   team: TeamMapStat,
   roster: { player_id: string; nickname: string }[],
   mapKey: string,
-  adjust: boolean,
 ): TeamBrief {
   const qualifiedKd = team.players.filter(
     (player) => player.games >= FRAG_GAMES && player.kd != null,
@@ -217,7 +218,7 @@ function buildTeam(
 
   return {
     games: team.games,
-    winRate: displayWinRate(team, adjust),
+    winRate: team.winRate,
     kd: team.kd,
     adr: mean(adrs),
     stack: stack.count,
@@ -231,18 +232,18 @@ function buildTeam(
 export function buildBriefing(
   stats: LobbyStats,
   mapKey: string,
-  adjust: boolean,
+  smart?: SmartSummary,
 ): MatchBriefing | undefined {
   const you = stats.you.maps.find((row) => row.mapKey === mapKey);
   const them = stats.them.maps.find((row) => row.mapKey === mapKey);
   const entity = stats.maps.find((row) => row.class_name === mapKey);
   if (!you || !them || !entity) return undefined;
 
-  const youBrief = buildTeam(stats, you, stats.you.players, mapKey, adjust);
-  const themBrief = buildTeam(stats, them, stats.them.players, mapKey, adjust);
-  const yours = youBrief.winRate ?? 0.5;
-  const theirs = themBrief.winRate ?? 0.5;
-  const gap = yours - theirs;
+  const youBrief = buildTeam(stats, you, stats.you.players, mapKey);
+  const themBrief = buildTeam(stats, them, stats.them.players, mapKey);
+  // Lean off the processed edge, not the raw win rates the rosters below show —
+  // otherwise the headline can point the opposite way to the panel's score.
+  const gap = mapEdge(you, them, mapKey, smart);
   let lean: MatchBriefing["lean"] = "even";
   let headline = `Even on ${entity.name}`;
   if (gap >= EDGE) {
@@ -268,7 +269,7 @@ export function buildBriefing(
     displayName: entity.name,
     headline,
     lean,
-    gap,
+    score: scoreFromEdge(gap),
     you: youBrief,
     them: themBrief,
   };

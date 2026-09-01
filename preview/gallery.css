@@ -1,0 +1,47 @@
+/* Chrome for the gallery itself. Deliberately kept separate from the badge
+   CSS (src/content/badge-art.ts) so there is never any doubt about which
+   rules ship in the extension: nothing in this file does. */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  background: #0b0b0d;
+  color: #e6e8ee;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px 96px; }
+h1 { font-size: 20px; margin: 0 0 6px; }
+.lede { color: #8a93a6; margin: 0 0 8px; max-width: 76ch; }
+.lede code { color: #9ec1ff; font-family: ui-monospace, "Cascadia Mono", monospace; }
+.controls {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 12px 0; margin-bottom: 28px;
+  background: #0b0b0dee; backdrop-filter: blur(6px);
+  border-bottom: 1px solid #1e2029;
+}
+button {
+  font: inherit; color: #e6e8ee; background: #1a1c24;
+  border: 1px solid #2c303c; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: #3d4656; }
+button.on { background: #2a3344; border-color: #3d5680; color: #9ec1ff; }
+.swatches { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+.swatches span { color: #6b7488; font-size: 11px; margin-right: 2px; }
+.swatch { width: 26px; height: 26px; padding: 0; border-radius: 5px; }
+.swatch.on { outline: 2px solid #9ec1ff; outline-offset: 2px; }
+section { margin: 0 0 40px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: #7d879b; margin: 0 0 4px; }
+.note { color: #6b7488; margin: 0 0 14px; font-size: 12px; max-width: 76ch; }
+.stage { background: var(--stage); border: 1px solid #24262e; border-radius: 10px; padding: 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 20px 12px; }
+.cell { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.cap { font-size: 11px; color: #6b7488; font-family: ui-monospace, "Cascadia Mono", monospace; }
+.row { display: flex; align-items: center; padding: 10px 12px; border-radius: 8px; background: #26262b; margin-bottom: 8px; }
+.row:last-child { margin-bottom: 0; }
+.av { width: 32px; height: 32px; border-radius: 4px; background: linear-gradient(135deg, #3a3f4d, #22252e); flex: 0 0 32px; margin-right: 10px; }
+.nick { font-weight: 700; }
+.cards { display: flex; gap: 26px; flex-wrap: wrap; }
+.card { width: 128px; }
+.art { position: relative; width: 96px; height: 96px; border-radius: 8px; background: linear-gradient(135deg, #3a3f4d, #22252e); margin: 0 auto 10px; }
+.who { text-align: center; font-size: 12px; color: #aeb6c6; }

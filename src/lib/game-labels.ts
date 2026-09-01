@@ -1,6 +1,35 @@
 import { LABEL_MAP_SAMPLE, LABEL_MIN_SAMPLE, SAMPLE_LIMIT } from "./constants";
-import type { GameLabel, HistoryGame, PlayerHistory } from "./types";
+import type { GameLabel, GameLabelKey, HistoryGame, PlayerHistory } from "./types";
 import type { ThisGameLine } from "./match-stats";
+
+// Display copy and tone per key, in one table rather than inline in the
+// assignment chain below — so the badge gallery in preview/ shows the exact
+// strings the lobby does.
+export const GAME_LABEL_TEXT: Record<GameLabelKey, string> = {
+  lifegame: "Lifegame",
+  brick: "Brick",
+  carry: "Carry",
+  passenger: "Passenger",
+  bounce: "Bounce back",
+  tilted: "Tilted",
+  cooking: "Cooking",
+  offgame: "Off game",
+  merchant: "Map merchant",
+  tourist: "Tourist",
+};
+
+export const GAME_LABEL_TONE: Record<GameLabelKey, GameLabel["tone"]> = {
+  lifegame: "hot",
+  brick: "cold",
+  carry: "hot",
+  passenger: "bad",
+  bounce: "good",
+  tilted: "cold",
+  cooking: "good",
+  offgame: "bad",
+  merchant: "info",
+  tourist: "info",
+};
 
 export function sameMatchId(a: string, b: string): boolean {
   return a.replace(/^1-/, "") === b.replace(/^1-/, "");
@@ -92,57 +121,24 @@ export function assignGameLabels(
     const tourist =
       mapGames <= 2 && (pct >= 0.85 || pct <= 0.15) && kds.length >= LABEL_MIN_SAMPLE;
 
-    let key: GameLabel["key"] | undefined;
-    let text = "";
-    let tone: GameLabel["tone"] = "info";
-    if (life) {
-      key = "lifegame";
-      text = "Lifegame";
-      tone = "hot";
-    } else if (brick) {
-      key = "brick";
-      text = "Brick";
-      tone = "cold";
-    } else if (carry) {
-      key = "carry";
-      text = "Carry";
-      tone = "hot";
-    } else if (passenger) {
-      key = "passenger";
-      text = "Passenger";
-      tone = "bad";
-    } else if (bounce) {
-      key = "bounce";
-      text = "Bounce back";
-      tone = "good";
-    } else if (tilted) {
-      key = "tilted";
-      text = "Tilted";
-      tone = "cold";
-    } else if (cook) {
-      key = "cooking";
-      text = "Cooking";
-      tone = "good";
-    } else if (off) {
-      key = "offgame";
-      text = "Off game";
-      tone = "bad";
-    } else if (merchant) {
-      key = "merchant";
-      text = "Map merchant";
-      tone = "info";
-    } else if (tourist) {
-      key = "tourist";
-      text = "Tourist";
-      tone = "info";
-    }
+    let key: GameLabelKey | undefined;
+    if (life) key = "lifegame";
+    else if (brick) key = "brick";
+    else if (carry) key = "carry";
+    else if (passenger) key = "passenger";
+    else if (bounce) key = "bounce";
+    else if (tilted) key = "tilted";
+    else if (cook) key = "cooking";
+    else if (off) key = "offgame";
+    else if (merchant) key = "merchant";
+    else if (tourist) key = "tourist";
     if (!key) continue;
     labels.push({
       playerId: line.playerId,
       nickname: line.nickname,
       key,
-      text,
-      tone,
+      text: GAME_LABEL_TEXT[key],
+      tone: GAME_LABEL_TONE[key],
       detail,
     });
   }

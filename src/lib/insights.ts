@@ -1,7 +1,7 @@
 import { OUTLIER_GAP, OUTLIER_MIN_GAMES, STACK_MIN_PLAYERS, THIN_MEAN_GAMES } from "./constants";
-import { pickAdvantage } from "./scoring";
-import { smartAdvantage } from "./calibration";
-import type { PlayerMapStat, SmartSummary, TeamMapStat } from "./types";
+import { mapEdge } from "./score";
+import { sameMatchId } from "./game-labels";
+import type { HistoryGame, PlayerMapStat, SmartSummary, TeamMapStat } from "./types";
 
 export type ChartBadge = "ban" | "perm-you" | "perm-them" | "thin";
 
@@ -64,6 +64,32 @@ export function formatForm(recent: boolean[]): string {
   return recent.map((win) => (win ? "W" : "L")).join("");
 }
 
+export type Streak = { len: number; won: boolean };
+
+/**
+ * The player's current unbroken run across ALL maps, newest game first — the
+ * one thing the per-map form dots cannot show. `exclude` drops the room's own
+ * match, which `historyGames` still contains once the match is over (unlike
+ * the label path, it is never rebuilt as-of the match).
+ */
+export function currentStreak(
+  games: HistoryGame[],
+  exclude?: string,
+): Streak | undefined {
+  const sorted = [...games].sort((a, b) => (b.at || 0) - (a.at || 0));
+  const usable = exclude
+    ? sorted.filter((game) => !(game.matchId && sameMatchId(game.matchId, exclude)))
+    : sorted;
+  if (usable.length === 0) return undefined;
+  const won = usable[0].won;
+  let len = 0;
+  for (const game of usable) {
+    if (game.won !== won) break;
+    len += 1;
+  }
+  return { len, won };
+}
+
 export function findOutlier(stat: TeamMapStat): PlayerMapStat | undefined {
   const qualified = stat.players.filter(
     (player) => player.games >= OUTLIER_MIN_GAMES && player.winRate != null,
@@ -84,17 +110,12 @@ export function suggestBanPick(
     you: TeamMapStat;
     them: TeamMapStat;
   }>,
-  adjust: boolean,
   smart?: SmartSummary,
 ): { ban?: string; pick?: string } {
   if (remaining.length === 0) return {};
   const scored = remaining.map((row) => ({
     name: row.displayName,
-    score: smartAdvantage(
-      pickAdvantage(row.you, row.them, adjust),
-      row.mapKey,
-      smart,
-    ),
+    score: mapEdge(row.you, row.them, row.mapKey, smart),
   }));
   scored.sort((a, b) => b.score - a.score);
   const pick = scored[0]?.name;
@@ -106,7 +127,6 @@ export function suggestBanPick(
 export function badgeForMap(
   row: { mapKey: string; you: TeamMapStat; them: TeamMapStat; dropped: boolean },
   remaining: Array<{ mapKey: string; you: TeamMapStat; them: TeamMapStat }>,
-  adjust: boolean,
   smart?: SmartSummary,
 ): ChartBadge | undefined {
   if (row.dropped) {
@@ -116,11 +136,7 @@ export function badgeForMap(
 
   const scores = remaining.map((item) => ({
     mapKey: item.mapKey,
-    score: smartAdvantage(
-      pickAdvantage(item.you, item.them, adjust),
-      item.mapKey,
-      smart,
-    ),
+    score: mapEdge(item.you, item.them, item.mapKey, smart),
     youThin: isThin(item.you),
     themThin: isThin(item.them),
     youWr: item.you.winRate ?? 0,

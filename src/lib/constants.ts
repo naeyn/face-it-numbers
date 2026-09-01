@@ -25,3 +25,4 @@ export const SMART_MIN_SAMPLES = 8;
 export const SMART_MAP_MIN = 3;
 export const SMART_MAX_SAMPLES = 80;
 export const SMART_KEY = "finSmart";
+export const STREAK_MIN = 4;

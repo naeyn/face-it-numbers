@@ -1,6 +1,6 @@
 # Faceit Numbers
 
-Chrome extension that shows **CS2 map play and win rates** for your team and the enemy team during Faceit lobby veto. Stats come from each player's last ~30 Faceit matches (5v5).
+Chrome extension for Faceit lobby veto. It shows two separate things, on purpose: the **raw CS2 map win rates** for both teams on the map rows, and a processed **edge score** per map in the floating panel. Stats come from each player's last ~30 Faceit matches (5v5).
 
 No developer API key. The extension reads the same Faceit data the website already shows, using your logged-in Faceit session.
 
@@ -34,10 +34,11 @@ For local development, `npm run dev` rebuilds into `dist` as you edit. Reload th
 
 When the lobby has players:
 
-- A floating panel compares team win rates per map (grouped bars) with play counts and a you-minus-them delta.
-- Compact `You … | Them …` chips are injected onto the veto map cards when that UI is visible.
+- `WR 54% · 47%` chips are injected onto the veto map cards. These are always the **raw** last-30 win rates — nothing is smoothed or reweighted.
+- The floating panel shows an **edge score** per map (`+26` / `−13`, never a percentage): the win-rate gap after a sample-size shrink and, once you have 8 finished lobbies, a correction learned from your own results. It sorts, badges and suggests ban/pick off that one number.
+- The **?** beside the panel's caption opens a decoder that spells out those steps and the live state of your calibration.
 - Use **Swap teams** if your nickname was not detected and the sides are reversed.
-- Click a map in the chart for a per-player breakdown.
+- Click a map in the panel for a per-player breakdown — that drill-down is raw win rates again, labelled as such.
 
 ## Releasing
 
