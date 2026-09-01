@@ -1,4 +1,4 @@
-import { nicknameFromToken } from "../lib/session-user";
+import { nicknameFromToken, userIdFromToken } from "../lib/session-user";
 
 const SKIP_NICKS = new Set([
   "search",
@@ -31,12 +31,40 @@ function nicknamesFrom(root: ParentNode): string[] {
   return nicks;
 }
 
+// The header carries other player links than yours — a recent-teammates
+// dropdown, an invite popover — and picking the wrong one puts the panel on
+// the wrong side. Your own link is the one inside the account control, so
+// look there first and only then fall back to whatever came first.
+const SELF_CONTAINERS = [
+  '[class*="Avatar"]',
+  '[class*="avatar"]',
+  '[data-testid*="avatar"]',
+  '[class*="UserMenu"]',
+  '[class*="user-menu"]',
+  '[data-testid*="user-menu"]',
+  '[class*="Profile"]',
+  '[data-testid*="profile"]',
+];
+
+function selfNickname(header: Element): string | undefined {
+  for (const selector of SELF_CONTAINERS) {
+    for (const node of header.querySelectorAll(selector)) {
+      const nick = nicknamesFrom(node)[0];
+      if (nick) return nick;
+    }
+  }
+  return undefined;
+}
+
 function headerNickname(): string | undefined {
   const header =
     document.querySelector("header") ??
     document.querySelector("nav") ??
     document.querySelector('[data-testid="header"]');
   if (!header) return undefined;
+
+  const fromSelf = selfNickname(header);
+  if (fromSelf) return fromSelf;
 
   const fromLinks = nicknamesFrom(header);
   if (fromLinks[0]) return fromLinks[0];
@@ -68,6 +96,15 @@ export function getFaceitToken(): string | undefined {
 
 export function detectMyNickname(): string | undefined {
   return nicknameFromToken(getFaceitToken()) ?? headerNickname();
+}
+
+/**
+ * Exact where the nickname is only a guess: the roster is keyed by player_id,
+ * so a hit here settles the side outright instead of relying on two display
+ * names folding to the same string.
+ */
+export function detectMyPlayerId(): string | undefined {
+  return userIdFromToken(getFaceitToken());
 }
 
 export function getMatchIdFromUrl(url = location.href): string | undefined {

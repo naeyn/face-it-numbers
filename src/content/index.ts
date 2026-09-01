@@ -15,7 +15,12 @@ import {
 import { extensionAlive, isContextInvalidated } from "../lib/extension";
 import { absorbSmart } from "../lib/calibration";
 import { SETTINGS_KEY, loadSettings } from "../lib/settings";
-import { detectMyNickname, getFaceitToken, getMatchIdFromUrl } from "./detect-user";
+import {
+  detectMyNickname,
+  detectMyPlayerId,
+  getFaceitToken,
+  getMatchIdFromUrl,
+} from "./detect-user";
 import {
   clearMapCards,
   injectMapCards,
@@ -75,6 +80,9 @@ function swapTeams(stats: LobbyStats): LobbyStats {
   return {
     ...stats,
     myFaction: stats.myFaction === "faction1" ? "faction2" : "faction1",
+    // The user just told us which side is theirs, so the panel stops
+    // second-guessing it even if we never found them in a roster.
+    myFactionKnown: true,
     you: stats.them,
     them: stats.you,
     youWon: stats.youWon == null ? null : !stats.youWon,
@@ -121,6 +129,7 @@ async function refresh(): Promise<void> {
       type: "GET_LOBBY_STATS",
       matchId,
       myNickname: detectMyNickname(),
+      myPlayerId: detectMyPlayerId(),
       swapped,
       token: getFaceitToken(),
     });

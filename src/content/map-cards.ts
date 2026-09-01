@@ -87,8 +87,20 @@ function wrOnly(stat: TeamMapStat): string {
   return `${Math.round(stat.winRate * 100)}%`;
 }
 
-function chipHtml(you: TeamMapStat, them: TeamMapStat): string {
-  return `<span class="fin-tag">WR</span><span class="fin-you">${wrOnly(you)}</span><span class="fin-sep">·</span><span class="fin-them">${wrOnly(them)}</span>`;
+function wrSpan(stat: TeamMapStat, side: "you" | "them"): string {
+  return `<span class="fin-${side}">${wrOnly(stat)}</span>`;
+}
+
+/**
+ * The chip lives in Faceit's own map row, so the two numbers stay pinned to
+ * the page's team order — faction1 first — and hold still under a Swap teams
+ * click, which only changes which side we call ours. The colour, not the
+ * position, is what says which one is you.
+ */
+function chipHtml(you: TeamMapStat, them: TeamMapStat, youFirst: boolean): string {
+  const left = youFirst ? wrSpan(you, "you") : wrSpan(them, "them");
+  const right = youFirst ? wrSpan(them, "them") : wrSpan(you, "you");
+  return `<span class="fin-tag">WR</span>${left}<span class="fin-sep">·</span>${right}`;
 }
 
 /**
@@ -336,7 +348,7 @@ export async function injectMapCards(stats: LobbyStats): Promise<void> {
     placeChip(
       row,
       mapKey,
-      chipHtml(you, them),
+      chipHtml(you, them, stats.you.faction === "faction1"),
       chipClassName(chipLean(you, them), thin),
       gutter,
     );

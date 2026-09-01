@@ -198,6 +198,9 @@ export type LobbyStats = {
   status: string;
   myNickname?: string;
   myFaction: FactionId;
+  // False when no roster row matched the session account and the side is the
+  // faction1 default rather than something we established.
+  myFactionKnown: boolean;
   you: TeamStats;
   them: TeamStats;
   maps: MapEntity[];
@@ -224,6 +227,7 @@ export type GetLobbyStatsMessage = {
   type: "GET_LOBBY_STATS";
   matchId: string;
   myNickname?: string;
+  myPlayerId?: string;
   swapped?: boolean;
   token?: string;
 };
