@@ -68,10 +68,16 @@ async function fetchOnce(
   token: string | undefined,
   attempt: number,
 ): Promise<Response> {
+  // Faceit's session lives in HttpOnly `__Host-` cookies that no script can
+  // read, so a bearer header alone cannot authenticate us. Sending the cookies
+  // is the only way to reach account-scoped endpoints; Chrome treats a request
+  // from a service worker holding host permissions as first-party, so even the
+  // SameSite=Lax session cookie rides along. Only Faceit hosts go through here
+  // — Leetify has its own uncredentialed fetch.
   const response = await fetch(url, {
     method: "GET",
     headers: bearer(token),
-    credentials: "omit",
+    credentials: "include",
   });
 
   const canRetry =
@@ -93,11 +99,21 @@ async function fetchOnce(
   return response;
 }
 
+/**
+ * `siteFirst` is for account-scoped paths. The session cookies are `__Host-`
+ * prefixed, which pins them to www.faceit.com, so api.faceit.com can never
+ * answer as us — asking it first buys a guaranteed 403 and a wasted round
+ * trip. Public paths keep the original order.
+ */
 export async function faceitGet(
   path: string,
   token: string | undefined,
+  { siteFirst = false }: { siteFirst?: boolean } = {},
 ): Promise<unknown> {
-  const urls = [`${FACEIT_API_BASE}${path}`, `${FACEIT_SITE_API_BASE}${path}`];
+  const bases = siteFirst
+    ? [FACEIT_SITE_API_BASE, FACEIT_API_BASE]
+    : [FACEIT_API_BASE, FACEIT_SITE_API_BASE];
+  const urls = bases.map((base) => `${base}${path}`);
   let lastError: FaceitApiError | undefined;
 
   if (cooldownActive()) {
@@ -108,6 +124,12 @@ export async function faceitGet(
     const response = await fetchOnce(url, token, 0);
     if (response.status === 404) {
       throw new FaceitApiError(404, "Not found");
+    }
+    // A rejected request shape is rejected by both bases — they front the same
+    // services. Only 401/403 are worth re-asking, since the session cookies
+    // reach one host and not the other.
+    if (response.status === 400 || response.status === 422) {
+      throw new FaceitApiError(response.status, "Rejected by Faceit");
     }
     if (response.status === 429) {
       // Rate limited after retries: trying the fallback base would only add

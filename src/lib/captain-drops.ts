@@ -38,24 +38,17 @@ function captainFaction(
   return undefined;
 }
 
-async function playerHistory(
-  captainId: string,
-  token: string | undefined,
-): Promise<unknown[]> {
-  const paths = [
-    `/match-history/v5/players/${captainId}/history/?page=0&size=30`,
-    `/match-history/v5/players/${captainId}/history/?offset=0&limit=30`,
-  ];
-  for (const path of paths) {
-    try {
-      const raw = await faceitGet(path, token);
-      if (Array.isArray(raw)) return raw;
-      const record = asRecord(raw);
-      if (Array.isArray(record?.items)) return record.items as unknown[];
-    } catch {
-      /* try next */
-    }
-  }
+/**
+ * Faceit retired match-history/v5: every shape of that call answers 400, on
+ * both bases, so the old two-path probe spent four requests per cold lobby to
+ * arrive at an empty list. Nothing else can stand in for it cheaply — the
+ * stats/time rows we already cache carry a matchId but no faction, and
+ * democracy/v1 reports drops as faction1/faction2 without naming a roster, so
+ * placing the captain on a side again would cost a match read per historical
+ * match. Until a discovery endpoint turns up that is worth ~24 extra requests
+ * a lobby, discovery yields nothing and costs nothing.
+ */
+async function playerHistory(): Promise<unknown[]> {
   return [];
 }
 
@@ -119,7 +112,7 @@ export async function fetchCaptainDrops(
     return stored.drops;
   }
 
-  const history = await playerHistory(captainId, token);
+  const history = await playerHistory();
   const captainMatches = history
     .map((item) => asRecord(item))
     .filter((row): row is Record<string, unknown> => Boolean(row))

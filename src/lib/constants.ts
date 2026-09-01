@@ -1,4 +1,12 @@
 export const SAMPLE_LIMIT = 30;
+// The stats endpoint serves up to 100 rows per call and silently caps there.
+// Only the label backfill uses it: that walk wants 30 games older than a given
+// match, so a wider page is the difference between one request and eight. The
+// map aggregates deliberately stay on SAMPLE_LIMIT — widening them would change
+// every win rate on screen.
+export const HISTORY_PAGE_SIZE = 100;
+// A finished match is immutable, so re-reading it every poll buys nothing.
+export const FINISHED_MATCH_TTL_MS = 6 * 60 * 60 * 1000;
 export const CACHE_TTL_MS = 15 * 60 * 1000;
 export const FETCH_CONCURRENCY = 3;
 export const PLAYER_FETCH_CONCURRENCY = 5;
