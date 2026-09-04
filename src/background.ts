@@ -65,7 +65,7 @@ const IDENTITY_KEY = "finIdentity";
 let sessionIdentityCache: { token: string; identity: Identity; at: number } | undefined;
 
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, _sender, sendResponse) => {
+  (message: ExtensionMessage, sender, sendResponse) => {
     if (message.type === "OPEN_OPTIONS") {
       void chrome.runtime.openOptionsPage();
       sendResponse({ ok: true });
@@ -78,6 +78,7 @@ chrome.runtime.onMessage.addListener(
         { nickname: message.myNickname, playerId: message.myPlayerId },
         message.swapped,
         message.token,
+        sender.tab?.id,
       )
         .then(sendResponse)
         .catch((error: unknown) => {
@@ -118,11 +119,13 @@ async function getLobbyStats(
   fromPage: Identity,
   swapped: boolean | undefined,
   pageToken: string | undefined,
+  tabId: number | undefined,
 ): Promise<LobbyStatsResponse> {
   const token = await resolveToken(pageToken);
-  const [match, session] = await Promise.all([
+  const [match, session, fromMainWorld] = await Promise.all([
     fetchMatch(matchId, token),
     resolveSessionIdentity(token),
+    resolveMainWorldIdentity(tabId),
   ]);
   const faction1 = match.teams?.faction1?.roster ?? [];
   const faction2 = match.teams?.faction2?.roster ?? [];
@@ -135,17 +138,24 @@ async function getLobbyStats(
   );
 
   const roster = [...faction1, ...faction2];
-  // Session first — it comes from the logged-in token — then whatever the page
-  // could read, then whoever we resolved last time, which is all that is left
-  // once Faceit stops answering /sessions/me.
-  const identities = [session, fromPage, await lastKnownIdentity()];
+  // The page's own world first: it is the only context that is first-party to
+  // Faceit by construction, so it is the one answer that does not depend on a
+  // cookie surviving a context hop. Then the worker's own session lookup, then
+  // whatever the page could read, then whoever we resolved last time — all that
+  // is left once Faceit stops answering /sessions/me.
+  const identities = [fromMainWorld, session, fromPage, await lastKnownIdentity()];
   const me = identifyMe(faction1, faction2, identities);
   const myFaction = applySwap(me.faction, swapped ?? false);
   // A manual swap is the user telling us the side; nothing left to flag.
   const myFactionKnown = me.known || (swapped ?? false);
   const sessionNickname =
     me.player?.nickname ??
-    pickRosterNickname(session.nickname, fromPage.nickname, faction1, faction2);
+    pickRosterNickname(
+      fromMainWorld.nickname ?? session.nickname,
+      fromPage.nickname,
+      faction1,
+      faction2,
+    );
   const youRoster = myFaction === "faction1" ? faction1 : faction2;
   const themRoster = myFaction === "faction1" ? faction2 : faction1;
   const enemyCaptain =
@@ -306,6 +316,80 @@ async function resolveSessionIdentity(token: string | undefined): Promise<Identi
   }
   void rememberIdentity(identity);
   return identity;
+}
+
+/**
+ * Faceit's session lives in `__Host-AuthSession` and
+ * `__Host-FaceitGatewayAuthorization`: HttpOnly, scoped to www.faceit.com, and
+ * marked SameSite=Lax. Two things follow. The `__Host-` scope is why
+ * api.faceit.com answers /sessions/me with a 403 no matter who is logged in,
+ * and the Lax marking is why a request the worker makes itself — cross-site by
+ * origin, whatever the host permissions say — cannot be relied on to carry it.
+ * The page's own world is first-party by construction, so ask it there and let
+ * every other source be the fallback rather than the other way round.
+ */
+async function fetchMainWorldIdentity(tabId: number): Promise<Identity> {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: async () => {
+      try {
+        const response = await fetch(
+          "https://www.faceit.com/api/users/v1/sessions/me",
+          { credentials: "include" },
+        );
+        if (!response.ok) return null;
+        const body: unknown = await response.json();
+        const record = body as { payload?: unknown } | null;
+        const payload = (record?.payload ?? body) as {
+          id?: unknown;
+          nickname?: unknown;
+        } | null;
+        if (!payload) return null;
+        return { id: payload.id, nickname: payload.nickname };
+      } catch {
+        // The page is mid-navigation or Faceit is down; the worker's own
+        // lookup is still there to try.
+        return null;
+      }
+    },
+  });
+
+  const result = injection?.result as
+    | { id?: unknown; nickname?: unknown }
+    | null
+    | undefined;
+  if (!result) return {};
+  return {
+    // /sessions/me names the player_id plainly `id`, so wrap it under a key the
+    // shared guid check knows, exactly as `topLevelId` does for the worker's
+    // own copy of this payload.
+    playerId: userIdFromPayload({ guid: result.id }),
+    nickname: nicknameFromPayload({ nickname: result.nickname }),
+  };
+}
+
+let mainWorldIdentityCache: { identity: Identity; at: number } | undefined;
+
+async function resolveMainWorldIdentity(
+  tabId: number | undefined,
+): Promise<Identity> {
+  if (tabId == null) return {};
+  const cached = mainWorldIdentityCache;
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.identity;
+  try {
+    const identity = await fetchMainWorldIdentity(tabId);
+    // Only a hit is worth caching: a miss is usually the page still settling,
+    // and the next poll is seconds away.
+    if (identity.playerId || identity.nickname) {
+      mainWorldIdentityCache = { identity, at: Date.now() };
+      void rememberIdentity(identity);
+    }
+    return identity;
+  } catch {
+    // No scripting permission, a restricted tab, or the tab went away.
+    return {};
+  }
 }
 
 function merge(primary: Identity, fallback: Identity): Identity {

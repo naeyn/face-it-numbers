@@ -17,7 +17,9 @@ export default defineManifest({
     48: "icons/icon48.png",
     128: "icons/icon128.png",
   },
-  permissions: ["storage", "cookies"],
+  // `scripting` is what lets us run the identity probe in the page's own world;
+  // the service worker's fetch cannot be trusted to carry Faceit's session.
+  permissions: ["storage", "cookies", "scripting"],
   host_permissions: [
     "https://www.faceit.com/*",
     "https://api.faceit.com/*",
